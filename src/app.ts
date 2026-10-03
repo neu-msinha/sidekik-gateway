@@ -1,5 +1,6 @@
 import Fastify, { type FastifyError, type FastifyServerOptions } from 'fastify';
 import cors from '@fastify/cors';
+import rateLimit, { type RateLimitPluginOptions } from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
 import {
   hasZodFastifySchemaValidationErrors,
@@ -11,6 +12,8 @@ import type { Env } from './env.js';
 import { requireSharedSecret, requireUser, type VerifyUser } from './auth.js';
 import { STREAMS, type AgentCommand, type Bus, type UsageRecord } from './contracts/index.js';
 import { HttpError } from './errors.js';
+import { genReqId, registerRequestLogging } from './logging.js';
+import { rateLimitOptions } from './rate-limit.js';
 import { healthRoutes, type HealthCheck } from './routes/health.js';
 import { agentHostRoutes } from './routes/agent-host.js';
 import { costRoutes } from './routes/costs.js';
@@ -45,14 +48,22 @@ export type AppDeps = {
   broadcaster: Broadcaster;
   offRecord?: OffRecordState;
   logger?: FastifyServerOptions['logger'];
+  /** Overrides for the per-user rate limit (tests); defaults to 20 req/s. */
+  rateLimit?: Partial<RateLimitPluginOptions>;
 };
 
 export async function buildApp(deps: AppDeps) {
   const { env } = deps;
   const offRecord = deps.offRecord ?? new OffRecordState();
 
+  const logger = deps.logger ?? { level: env.LOG_LEVEL };
   const app = Fastify({
-    logger: deps.logger ?? { level: env.LOG_LEVEL },
+    // Every line names the service and version; Railway shows all services in one stream.
+    logger:
+      typeof logger === 'object' ? { ...logger, base: { service: 'sidekik-gateway', version: VERSION, pid: process.pid } } : logger,
+    disableRequestLogging: true,
+    genReqId,
+    requestIdLogLabel: 'req_id',
     // Cloudflare → Railway: trust X-Forwarded-* for client IPs.
     trustProxy: true,
   }).withTypeProvider<ZodTypeProvider>();
@@ -100,6 +111,9 @@ export async function buildApp(deps: AppDeps) {
     credentials: true,
   });
 
+  registerRequestLogging(app);
+  await app.register(rateLimit, rateLimitOptions(deps.rateLimit));
+  app.addHook('onRequest', app.rateLimit());
   await app.register(websocket, { options: { maxPayload: 64 * 1024 } });
 
   app.decorate('requireUser', requireUser(deps.verifyUser));

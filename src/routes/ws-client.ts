@@ -17,6 +17,7 @@ import {
   type TranscriptTurn,
 } from '../contracts/index.js';
 import { forbidden, HttpError, notFound, unauthorized } from '../errors.js';
+import { annotate } from '../logging.js';
 import type { OffRecordState } from '../services/off-record.js';
 import type { Redactor } from '../services/redact.js';
 import type { SessionRow, Store } from '../store/types.js';
@@ -85,11 +86,13 @@ export const wsClientRoutes: FastifyPluginAsync<WsClientOptions> = async (app, o
     if (!session.consent_at) throw new HttpError(409, 'consent_required', 'Consent has not been recorded');
 
     request.wsSession = { session, claims };
+    annotate(request, { session_id: session.id, org_id: session.org_id });
   };
 
   app.get('/ws/client/:sid', { websocket: true, onRequest: authenticate }, (socket, request) => {
     const { session } = request.wsSession!;
-    const log = request.log.child({ session_id: session.id, org_id: session.org_id });
+    // request.log already carries session_id and org_id (annotated in authenticate).
+    const log = request.log;
     const startedAt = Date.parse(session.started_at);
     offRecord.seed(session.id, session.off_record);
     opts.onConnect?.(session.id);

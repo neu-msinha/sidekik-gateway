@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { HttpError, notFound } from '../errors.js';
+import { annotate } from '../logging.js';
 import type { OffRecordController } from '../services/off-record.js';
 import type { PhaseService } from '../services/phase.js';
 import type { Redactor } from '../services/redact.js';
@@ -47,6 +48,7 @@ export const internalRoutes: FastifyPluginAsyncZod<InternalRoutesOptions> = asyn
     async (request) => {
       const session = await opts.store.getSession(request.params.id);
       if (!session) throw notFound('Session not found');
+      annotate(request, { session_id: session.id, org_id: session.org_id });
       if (session.ended_at) throw new HttpError(409, 'session_ended', 'Session has ended');
       return opts.offRecord.set(session, request.body, request.log);
     },
@@ -67,6 +69,7 @@ export const internalRoutes: FastifyPluginAsyncZod<InternalRoutesOptions> = asyn
     async (request) => {
       const session = await opts.store.getSession(request.params.id);
       if (!session) throw notFound('Session not found');
+      annotate(request, { session_id: session.id, org_id: session.org_id });
       const body = request.body;
       return body.phase === 'debrief'
         ? opts.phase.debrief(session, body.dynamic_variables, request.log)

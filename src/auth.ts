@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import type { FastifyRequest, onRequestAsyncHookHandler } from 'fastify';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { unauthorized } from './errors.js';
+import { annotate } from './logging.js';
 
 export type AuthUser = { id: string; email?: string };
 
@@ -72,6 +73,7 @@ export function requireUser(verify: VerifyUser): onRequestAsyncHookHandler {
     const user = await verify(match[1]);
     if (!user) throw unauthorized('Invalid or expired token');
     request.user = user;
+    annotate(request, { user_id: user.id });
   };
 }
 

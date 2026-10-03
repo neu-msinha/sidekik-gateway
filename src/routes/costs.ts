@@ -10,7 +10,7 @@ export const costRoutes: FastifyPluginAsyncZod<{ store: Store }> = async (app, o
     '/v1/costs/:sid',
     { onRequest: app.requireUser, schema: { params: z.object({ sid: z.string().uuid() }) } },
     async (request) => {
-      const session = await sessionForUser(opts.store, request.params.sid, request.user!.id);
+      const session = await sessionForUser(opts.store, request, request.params.sid);
       return summarizeCosts(session.id, await opts.store.listCosts(session.id));
     },
   );
