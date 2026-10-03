@@ -25,6 +25,9 @@ export type MemoryData = {
   capture: Record<CaptureTable, CaptureRow[]>;
   /** Storage paths removed by deleteCaptureSince. */
   removedObjects: string[];
+  steps: { id: string; work_map_id: string; org_id: string }[];
+  clips: { step_id: string; storage_path: string; created_at: string }[];
+  agentHostTokens: { token: string; session_id: string; expires_at: string; used_at: string | null }[];
 };
 
 /** In-memory Store for tests and `pnpm dev:mock`. Not for production: nothing is persisted. */
@@ -41,6 +44,9 @@ export function memoryStore(seed: Partial<MemoryData> = {}): Store & { data: Mem
     spans: [],
     capture: { transcript_turns: [], screen_events: [], keyframes: [], questions: [] },
     removedObjects: [],
+    steps: [],
+    clips: [],
+    agentHostTokens: [],
     ...seed,
   };
   const person = (p?: Person) => (p ? { id: p.id, display_name: p.display_name } : null);
@@ -52,6 +58,7 @@ export function memoryStore(seed: Partial<MemoryData> = {}): Store & { data: Mem
     findExpertByUser: async (org, user) => person(data.experts.find((e) => e.org_id === org && e.user_id === user)),
     findLearnerByUser: async (org, user) => person(data.learners.find((l) => l.org_id === org && l.user_id === user)),
     getExpert: async (id) => person(data.experts.find((e) => e.id === id)),
+    getLearner: async (id) => person(data.learners.find((l) => l.id === id)),
     getWorkMap: async (id) => data.workmaps.find((w) => w.id === id) ?? null,
     getExpertMemory: async (expertId, workflowId) => {
       const m = data.memory.find((x) => x.expert_id === expertId && x.workflow_id === workflowId);
@@ -88,6 +95,22 @@ export function memoryStore(seed: Partial<MemoryData> = {}): Store & { data: Mem
       if (!s || !from.includes(s.phase)) return null;
       s.phase = to;
       return { ...s };
+    },
+    getStepOrg: async (stepId) => data.steps.find((x) => x.id === stepId)?.org_id ?? null,
+    getStepClipPath: async (workmapId, stepId) => {
+      if (!data.steps.some((x) => x.id === stepId && x.work_map_id === workmapId)) return null;
+      const clips = data.clips.filter((c) => c.step_id === stepId).sort((a, b) => b.created_at.localeCompare(a.created_at));
+      return clips[0]?.storage_path ?? null;
+    },
+    signStorageUrl: async (bucket, path, ttlSec) => `memory://${bucket}/${path}?ttl=${ttlSec}`,
+    insertAgentHostToken: async ({ session, token, expires_at }) => {
+      data.agentHostTokens.push({ token, session_id: session.id, expires_at, used_at: null });
+    },
+    claimAgentHostToken: async (token) => {
+      const t = data.agentHostTokens.find((x) => x.token === token);
+      if (!t || t.used_at || Date.parse(t.expires_at) <= Date.now()) return null;
+      t.used_at = new Date().toISOString();
+      return t.session_id;
     },
     setOffRecord: async (id, on) => {
       data.sessions.find((x) => x.id === id)!.off_record = on;

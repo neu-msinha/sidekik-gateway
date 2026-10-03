@@ -30,6 +30,40 @@ export function supabaseVerifier(supabase: SupabaseClient): VerifyUser {
   };
 }
 
+/**
+ * Remembers successful verifications for up to `ttlMs` (never past the token's own `exp`), so hot
+ * paths such as presave skip the network round trip to Supabase Auth. Failures are not cached.
+ */
+export function cachedVerifier(verify: VerifyUser, opts: { ttlMs?: number; max?: number; now?: () => number } = {}): VerifyUser {
+  const ttlMs = opts.ttlMs ?? 60_000;
+  const max = opts.max ?? 1000;
+  const now = opts.now ?? Date.now;
+  const cache = new Map<string, { user: AuthUser; until: number }>();
+
+  return async (jwt) => {
+    const hit = cache.get(jwt);
+    if (hit && hit.until > now()) return hit.user;
+    cache.delete(jwt);
+
+    const user = await verify(jwt);
+    if (!user) return null;
+    const exp = jwtExpiryMs(jwt);
+    cache.set(jwt, { user, until: Math.min(now() + ttlMs, exp ?? Infinity) });
+    if (cache.size > max) cache.delete(cache.keys().next().value!);
+    return user;
+  };
+}
+
+/** `exp` from a JWT payload, in ms. Only read after the token has been verified. */
+function jwtExpiryMs(jwt: string): number | null {
+  try {
+    const payload = JSON.parse(Buffer.from(jwt.split('.')[1] ?? '', 'base64url').toString()) as { exp?: unknown };
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
 export function requireUser(verify: VerifyUser): onRequestAsyncHookHandler {
   return async (request) => {
     const header = request.headers.authorization;

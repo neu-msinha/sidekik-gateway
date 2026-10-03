@@ -1,6 +1,6 @@
 import { buildApp, type AppDeps } from '../src/app.js';
 import { loadEnv, type Env } from '../src/env.js';
-import { fakeBroadcaster, fakeBus, fakeVoice, memoryStore } from './fakes/index.js';
+import { fakeBroadcaster, fakeBus, fakeMapper, fakeMeetbot, fakeTutor, fakeVoice, memoryStore } from './fakes/index.js';
 
 export const SECRETS = {
   internal: 'i'.repeat(64),
@@ -40,6 +40,9 @@ export function buildTestApp(overrides: Partial<AppDeps> = {}) {
     healthChecks: {},
     store: memoryStore(),
     voice: fakeVoice(),
+    tutor: fakeTutor(),
+    mapper: fakeMapper(),
+    meetbot: fakeMeetbot(),
     bus: fakeBus(),
     broadcaster: fakeBroadcaster(),
     redactor: { redact: async (text) => ({ text, engine: 'presidio', entities: [] }) },

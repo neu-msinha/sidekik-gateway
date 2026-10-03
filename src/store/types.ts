@@ -63,6 +63,7 @@ export interface Store {
   findExpertByUser(orgId: string, userId: string): Promise<Person | null>;
   findLearnerByUser(orgId: string, userId: string): Promise<Person | null>;
   getExpert(id: string): Promise<Person | null>;
+  getLearner(id: string): Promise<Person | null>;
   getWorkMap(id: string): Promise<WorkMapRef | null>;
   /** The expert's running summary for this workflow plus the text of their unresolved open items. */
   getExpertMemory(expertId: string, workflowId: string): Promise<{ summary: string; open_items: string[] } | null>;
@@ -76,6 +77,17 @@ export interface Store {
 
   /** Moves the session to `to` only if its phase is one of `from`. Returns the row, or null if it wasn't. */
   updatePhase(sessionId: string, from: Phase[], to: Phase): Promise<SessionRow | null>;
+
+  /** The org that owns a Work Map step (work_map_steps.org_id), or null. */
+  getStepOrg(stepId: string): Promise<string | null>;
+  /** The newest clip for a step of this Work Map (clips belong to perception), or null. */
+  getStepClipPath(workmapId: string, stepId: string): Promise<string | null>;
+  /** A signed Storage URL; every bucket is private (ARCHITECTURE §6). */
+  signStorageUrl(bucket: string, path: string, ttlSec: number): Promise<string>;
+
+  insertAgentHostToken(input: { session: SessionRow; token: string; expires_at: string }): Promise<void>;
+  /** Marks an unused, unexpired token as used and returns its session id; null otherwise. Atomic. */
+  claimAgentHostToken(token: string): Promise<string | null>;
 
   setOffRecord(sessionId: string, on: boolean): Promise<void>;
   openOffRecordSpan(span: OffRecordSpanInput): Promise<void>;

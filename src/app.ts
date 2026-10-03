@@ -12,7 +12,9 @@ import { requireSharedSecret, requireUser, type VerifyUser } from './auth.js';
 import { STREAMS, type AgentCommand, type Bus } from './contracts/index.js';
 import { HttpError } from './errors.js';
 import { healthRoutes, type HealthCheck } from './routes/health.js';
+import { agentHostRoutes } from './routes/agent-host.js';
 import { internalRoutes } from './routes/internal.js';
+import { proxyRoutes, toolRoutes } from './routes/proxies.js';
 import { sessionRoutes } from './routes/sessions.js';
 import { wsClientRoutes } from './routes/ws-client.js';
 import { createEgress } from './services/egress.js';
@@ -20,6 +22,7 @@ import { createOffRecordController, OffRecordState } from './services/off-record
 import { createPhaseService } from './services/phase.js';
 import type { Broadcaster } from './services/realtime.js';
 import type { Redactor } from './services/redact.js';
+import type { MapperClient, MeetbotClient, TutorClient } from './services/upstreams.js';
 import type { VoiceClient } from './services/voice.js';
 import type { Store } from './store/types.js';
 import { VERSION } from './version.js';
@@ -30,6 +33,9 @@ export type AppDeps = {
   healthChecks: Record<string, HealthCheck>;
   store: Store;
   voice: VoiceClient;
+  tutor: TutorClient;
+  mapper: MapperClient;
+  meetbot: MeetbotClient;
   bus: Bus;
   redactor: Redactor;
   broadcaster: Broadcaster;
@@ -136,11 +142,16 @@ export async function buildApp(deps: AppDeps) {
     ingestUrl: env.INGEST_URL,
     offRecord: offRecordController,
     phase,
-    onEnded: async (sessionId) => {
-      egress.forget(sessionId);
-      phase.forget(sessionId);
-      offRecord.forget(sessionId);
-      await deps.broadcaster.release(sessionId);
+    onEnded: async (session) => {
+      egress.forget(session.id);
+      phase.forget(session.id);
+      offRecord.forget(session.id);
+      if (session.mode === 'meeting') {
+        await deps.meetbot.removeBot(session.id).catch((err) =>
+          app.log.warn({ err, session_id: session.id, org_id: session.org_id }, 'meeting bot removal failed'),
+        );
+      }
+      await deps.broadcaster.release(session.id);
     },
   });
   await app.register(wsClientRoutes, {
@@ -157,6 +168,9 @@ export async function buildApp(deps: AppDeps) {
     offRecord: offRecordController,
     phase,
   });
+  await app.register(proxyRoutes, { store: deps.store, tutor: deps.tutor, mapper: deps.mapper, meetbot: deps.meetbot });
+  await app.register(toolRoutes, { tutor: deps.tutor, mapper: deps.mapper });
+  await app.register(agentHostRoutes, { store: deps.store, voice: deps.voice, sessionSecret: env.SK_SESSION_SECRET });
 
   return app;
 }
