@@ -42,7 +42,19 @@ pnpm dev            # tsx watch, reads .env
 | `pnpm dev` | Run from source with reload (reads `.env`) |
 | `pnpm build` / `pnpm start` | Compile to `dist/` / run the compiled server |
 | `pnpm typecheck` | `tsc --noEmit` |
-| `pnpm test` | vitest |
+| `pnpm test` | vitest (set `REDIS_TEST_URL` to include the Redis bus tests) |
+| `pnpm dev:mock` | Run against Redis only: in-memory data, stub voice, Realtime broadcasts printed to the log |
+| `pnpm dev:replay <file.jsonl>` | Publish fixture events onto the bus (`--speed`, `--session`) |
+
+### Running without teammates' services
+
+```bash
+docker compose -f ../sidekik-platform/dev/docker-compose.yml up -d   # Redis (+ Presidio)
+pnpm dev:mock                                                         # prints a ready /ws/client URL and dev tokens
+pnpm dev:replay dev/fixtures/capture-commands.jsonl                   # watch the log for "realtime cmd → …"
+```
+
+The mock seeds a consented capture session (`00000000-0000-4000-8000-00000000d001`) and accepts `Authorization: Bearer dev-sabine | dev-lena | dev-admin`.
 
 The service validates every env var at boot (`src/env.ts`) and exits with a list of what is missing. `GET /healthz` returns `{ok, version, deps}`, with 503 when a dependency is down.
 

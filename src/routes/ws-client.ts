@@ -26,6 +26,8 @@ export type WsClientOptions = {
   bus: Bus;
   redactor: Redactor;
   offRecord: OffRecordState;
+  /** Called once per accepted connection, e.g. to open the session's Realtime channel early. */
+  onConnect?: (sessionId: string) => void;
   sessionSecret: string;
 };
 
@@ -90,6 +92,7 @@ export const wsClientRoutes: FastifyPluginAsync<WsClientOptions> = async (app, o
     const log = request.log.child({ session_id: session.id, org_id: session.org_id });
     const startedAt = Date.parse(session.started_at);
     offRecord.seed(session.id, session.off_record);
+    opts.onConnect?.(session.id);
     log.info('client connected');
 
     const publish = async <T>(stream: StreamKey, type: string, t_ms: number | undefined, data: T) => {

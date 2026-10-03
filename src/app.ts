@@ -9,13 +9,15 @@ import {
 } from 'fastify-type-provider-zod';
 import type { Env } from './env.js';
 import { requireSharedSecret, requireUser, type VerifyUser } from './auth.js';
-import type { Bus } from './contracts/index.js';
+import { STREAMS, type AgentCommand, type Bus } from './contracts/index.js';
 import { HttpError } from './errors.js';
 import { healthRoutes, type HealthCheck } from './routes/health.js';
 import { internalRoutes } from './routes/internal.js';
 import { sessionRoutes } from './routes/sessions.js';
 import { wsClientRoutes } from './routes/ws-client.js';
+import { createEgress } from './services/egress.js';
 import { OffRecordState } from './services/off-record.js';
+import type { Broadcaster } from './services/realtime.js';
 import type { Redactor } from './services/redact.js';
 import type { VoiceClient } from './services/voice.js';
 import type { Store } from './store/types.js';
@@ -29,6 +31,7 @@ export type AppDeps = {
   voice: VoiceClient;
   bus: Bus;
   redactor: Redactor;
+  broadcaster: Broadcaster;
   offRecord?: OffRecordState;
   logger?: FastifyServerOptions['logger'];
 };
@@ -80,6 +83,23 @@ export async function buildApp(deps: AppDeps) {
   app.decorate('requireInternal', requireSharedSecret('x-internal-token', env.SK_INTERNAL_TOKEN));
   app.decorate('requireToolSecret', requireSharedSecret('x-sidekik-tool-secret', env.SK_TOOL_SECRET));
 
+  const egress = createEgress({
+    broadcaster: deps.broadcaster,
+    offRecord,
+    store: deps.store,
+    log: app.log.child({ component: 'egress' }),
+  });
+  let stopEgress: (() => void) | undefined;
+  app.addHook('onReady', async () => {
+    stopEgress = deps.bus.consume<AgentCommand>(STREAMS.commands, async (ev) => {
+      await egress.handle(ev);
+    });
+  });
+  app.addHook('onClose', async () => {
+    stopEgress?.();
+    await deps.broadcaster.close();
+  });
+
   await app.register(healthRoutes, { version: VERSION, checks: deps.healthChecks });
   await app.register(sessionRoutes, {
     store: deps.store,
@@ -87,12 +107,18 @@ export async function buildApp(deps: AppDeps) {
     bus: deps.bus,
     sessionSecret: env.SK_SESSION_SECRET,
     ingestUrl: env.INGEST_URL,
+    onEnded: async (sessionId) => {
+      egress.forget(sessionId);
+      offRecord.forget(sessionId);
+      await deps.broadcaster.release(sessionId);
+    },
   });
   await app.register(wsClientRoutes, {
     store: deps.store,
     bus: deps.bus,
     redactor: deps.redactor,
     offRecord,
+    onConnect: (sessionId) => deps.broadcaster.warm(sessionId),
     sessionSecret: env.SK_SESSION_SECRET,
   });
   await app.register(internalRoutes, { redactor: deps.redactor });

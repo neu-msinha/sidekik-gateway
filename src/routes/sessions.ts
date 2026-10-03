@@ -14,6 +14,8 @@ export type SessionRoutesOptions = {
   sessionSecret: string;
   /** Public perception base URL, e.g. wss://ingest.sidekik.live */
   ingestUrl: string;
+  /** Releases per-session resources (Realtime channel, debounce and off-record state). */
+  onEnded?: (sessionId: string) => Promise<void>;
 };
 
 const CAN_START: Record<'capture' | 'tutor', Role[]> = {
@@ -159,6 +161,9 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
 
       const ended = await store.endSession(session.id);
       await publishLifecycle(bus, ended, 'ended');
+      await opts.onEnded?.(ended.id).catch((err) =>
+        request.log.warn({ err, session_id: ended.id, org_id: ended.org_id }, 'session cleanup failed'),
+      );
       // TODO(proxies): remove the meeting bot via meetbot DELETE /internal/bots/:sid when mode is "meeting".
       request.log.info({ session_id: ended.id, org_id: ended.org_id }, 'session ended');
       return { session_id: ended.id, ended_at: ended.ended_at };

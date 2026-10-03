@@ -15,6 +15,10 @@ export class OffRecordState {
     this.state.set(sessionId, on);
   }
 
+  has(sessionId: string): boolean {
+    return this.state.has(sessionId);
+  }
+
   isOn(sessionId: string): boolean {
     return this.state.get(sessionId) ?? false;
   }
