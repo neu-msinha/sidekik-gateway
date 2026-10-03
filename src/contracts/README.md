@@ -12,4 +12,4 @@ Assumptions to confirm with Sahil, because perception and the other consumers ha
 
 - `sk_token`: HS256 JWT with claims `{sid, org, role, kind}`, `exp` 2 h after `iat`, no `iss`/`aud`.
 - Bus entries: `XADD <stream> MAXLEN ~ 10000 * data <JSON envelope>` (one field named `data`).
-- Envelope `type` for lifecycle events is `"session.lifecycle"`.
+- Envelope `type` values: `"session.lifecycle"`, `"transcript.turn"`, `"speech.signal"`, `"dom.event"`.
