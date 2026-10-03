@@ -54,7 +54,7 @@ pnpm dev:mock                                                         # prints a
 pnpm dev:replay dev/fixtures/capture-commands.jsonl                   # watch the log for "realtime cmd → …"
 ```
 
-The mock seeds a consented capture session (`00000000-0000-4000-8000-00000000d001`) and accepts `Authorization: Bearer dev-sabine | dev-lena | dev-admin`.
+The mock seeds a consented capture session (`…d001`, Sabine) and tutor session (`…d002`, Lena), and accepts `Authorization: Bearer dev-sabine | dev-lena | dev-admin`. Tutor, mapper and meetbot are stubbed; the presave stub blocks demo guardrail G1 (equipment over €5,000 not on cost center 0400).
 
 The service validates every env var at boot (`src/env.ts`) and exits with a list of what is missing. `GET /healthz` returns `{ok, version, deps}`, with 503 when a dependency is down.
 

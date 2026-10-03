@@ -1,5 +1,6 @@
 import type { AgentCommand, Bus, Envelope, StreamKey } from '../../src/contracts/index.js';
 import type { Broadcaster } from '../../src/services/realtime.js';
+import type { MapperClient, MeetbotClient, PresaveResult, TutorClient, TutorTool } from '../../src/services/upstreams.js';
 import type { VoiceClient, VoiceTokenRequest } from '../../src/services/voice.js';
 export { memoryStore, type MemoryData } from '../../src/store/memory.js';
 
@@ -80,4 +81,72 @@ export function fakeBroadcaster() {
     async close() {},
   };
   return b;
+}
+
+/** Records calls; set `fail` to make every call throw, or `presaveResult` to change the verdict. */
+export function fakeTutor() {
+  const t: TutorClient & {
+    presaves: { sessionId: string; state: unknown }[];
+    tools: { name: TutorTool; body: Record<string, unknown> }[];
+    presaveResult: PresaveResult;
+    fail?: Error;
+  } = {
+    presaves: [],
+    tools: [],
+    presaveResult: { allow: true },
+    async presave(sessionId, state) {
+      if (t.fail) throw t.fail;
+      t.presaves.push({ sessionId, state });
+      return t.presaveResult;
+    },
+    async tool(name, body) {
+      if (t.fail) throw t.fail;
+      t.tools.push({ name, body });
+      return { tool: name, ok: true };
+    },
+  };
+  return t;
+}
+
+export function fakeMapper() {
+  const m: MapperClient & { calls: string[]; fail?: Error } = {
+    calls: [],
+    async publish(id) {
+      if (m.fail) throw m.fail;
+      m.calls.push(`publish:${id}`);
+      return { job_id: `job-${id}` };
+    },
+    async export(id, format) {
+      if (m.fail) throw m.fail;
+      m.calls.push(`export:${id}:${format}`);
+      return {
+        contentType: 'application/zip',
+        disposition: 'attachment; filename="agent-rules.zip"',
+        body: Buffer.from('PK-fake-zip'),
+      };
+    },
+    async recallContext(body) {
+      if (m.fail) throw m.fail;
+      m.calls.push(`recall:${JSON.stringify(body)}`);
+      return { snippets: [{ text: 'Über 5.000 immer 0400.', t_ms: 192000, source: 'turn' }] };
+    },
+  };
+  return m;
+}
+
+export function fakeMeetbot() {
+  const m: MeetbotClient & { created: { sessionId: string; meetingUrl: string }[]; removed: string[]; fail?: Error } = {
+    created: [],
+    removed: [],
+    async createBot(sessionId, meetingUrl) {
+      if (m.fail) throw m.fail;
+      m.created.push({ sessionId, meetingUrl });
+      return { bot_id: `bot-${sessionId}` };
+    },
+    async removeBot(sessionId) {
+      if (m.fail) throw m.fail;
+      m.removed.push(sessionId);
+    },
+  };
+  return m;
 }

@@ -93,6 +93,13 @@ export function supabaseStore(db: SupabaseClient): Store {
       );
     },
 
+    async getLearner(id) {
+      return unwrap(
+        await db.from('learners').select('id, display_name').eq('id', id).maybeSingle<Person>(),
+        'get learner',
+      );
+    },
+
     async getWorkMap(id) {
       return unwrap(
         await db
@@ -180,6 +187,65 @@ export function supabaseStore(db: SupabaseClient): Store {
           .maybeSingle<SessionRow>(),
         'update phase',
       );
+    },
+
+    async getStepOrg(stepId) {
+      const row = unwrap(
+        await db.from('work_map_steps').select('org_id').eq('id', stepId).maybeSingle<{ org_id: string }>(),
+        'get step org',
+      );
+      return row?.org_id ?? null;
+    },
+
+    async getStepClipPath(workmapId, stepId) {
+      const step = unwrap(
+        await db.from('work_map_steps').select('id').eq('id', stepId).eq('work_map_id', workmapId).maybeSingle(),
+        'get step',
+      );
+      if (!step) return null;
+      const clip = unwrap(
+        await db
+          .from('clips')
+          .select('storage_path')
+          .eq('step_id', stepId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle<{ storage_path: string }>(),
+        'get clip',
+      );
+      return clip?.storage_path ?? null;
+    },
+
+    async signStorageUrl(bucket, path, ttlSec) {
+      const objectPath = path.replace(new RegExp(`^${bucket}/`), '');
+      const { data, error } = await db.storage.from(bucket).createSignedUrl(objectPath, ttlSec);
+      if (error || !data) throw new Error(`sign ${bucket}/${objectPath}: ${error?.message ?? 'no url'}`);
+      return data.signedUrl;
+    },
+
+    async insertAgentHostToken({ session, token, expires_at }) {
+      unwrap(
+        await db
+          .from('agent_host_tokens')
+          .insert({ org_id: session.org_id, session_id: session.id, token, expires_at }),
+        'insert agent-host token',
+      );
+    },
+
+    async claimAgentHostToken(token) {
+      // One conditional UPDATE, so two claims of the same token can't both succeed.
+      const row = unwrap(
+        await db
+          .from('agent_host_tokens')
+          .update({ used_at: new Date().toISOString() })
+          .eq('token', token)
+          .is('used_at', null)
+          .gt('expires_at', new Date().toISOString())
+          .select('session_id')
+          .maybeSingle<{ session_id: string }>(),
+        'claim agent-host token',
+      );
+      return row?.session_id ?? null;
     },
 
     async setOffRecord(sessionId, on) {

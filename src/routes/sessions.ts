@@ -4,10 +4,12 @@ import { z } from 'zod';
 import { signSessionToken, type Bus } from '../contracts/index.js';
 import { forbidden, HttpError, notFound } from '../errors.js';
 import { publishLifecycle } from '../services/lifecycle.js';
+import { sessionForUser as loadSessionForUser } from './access.js';
 import { offRecordBody } from './off-record-body.js';
 import type { OffRecordController } from '../services/off-record.js';
 import type { PhaseService } from '../services/phase.js';
-import type { VoiceClient, VoiceTokenRequest } from '../services/voice.js';
+import type { VoiceClient } from '../services/voice.js';
+import { voiceRequestFor } from '../services/voice-request.js';
 import type { NewSession, Role, SessionRow, Store } from '../store/types.js';
 
 export type SessionRoutesOptions = {
@@ -20,7 +22,7 @@ export type SessionRoutesOptions = {
   offRecord: OffRecordController;
   phase: PhaseService;
   /** Releases per-session resources (Realtime channel, debounce and off-record state). */
-  onEnded?: (sessionId: string) => Promise<void>;
+  onEnded?: (session: SessionRow) => Promise<void>;
 };
 
 const CAN_START: Record<'capture' | 'tutor', Role[]> = {
@@ -33,12 +35,7 @@ const SessionParams = z.object({ id: z.string().uuid() });
 export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async (app, opts) => {
   const { store, voice, bus } = opts;
 
-  /** Loads a session the caller's org owns; 404 otherwise so ids of other orgs don't leak. */
-  async function sessionForUser(id: string, userId: string): Promise<SessionRow> {
-    const session = await store.getSession(id);
-    if (!session || !(await store.getRole(session.org_id, userId))) throw notFound('Session not found');
-    return session;
-  }
+  const sessionForUser = (id: string, userId: string) => loadSessionForUser(store, id, userId);
 
   app.post(
     '/v1/sessions',
@@ -65,49 +62,21 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
       if (!CAN_START[kind].includes(role)) throw forbidden(`Role ${role} cannot start a ${kind} session`);
 
       const sessionId = randomUUID();
-      const base = { session_id: sessionId, workflow_name: workflow.name, language };
       const common = { id: sessionId, org_id: workflow.org_id, workflow_id, kind, mode, language, el_agent_id: null };
       let row: NewSession;
-      let tokenReq: VoiceTokenRequest;
 
       if (kind === 'capture') {
         const expert = await store.findExpertByUser(workflow.org_id, user.id);
-        const memory = expert && (await store.getExpertMemory(expert.id, workflow.id));
-        tokenReq = {
-          agent: 'interviewer',
-          phase: 'capture',
-          session_id: sessionId,
-          language,
-          dynamic_variables: {
-            ...base,
-            expert_name: expert?.display_name ?? 'the expert',
-            prior_summary: memory?.summary || 'none',
-            open_items: memory?.open_items.join('; ') || 'none',
-          },
-        };
         row = { ...common, phase: 'capture', expert_id: expert?.id ?? null, learner_id: null, workmap_id: null };
       } else {
         const workmapId = request.body.workmap_id ?? workflow.current_workmap_id;
         if (!workmapId) throw new HttpError(409, 'no_workmap', 'This workflow has no published Work Map yet');
         const workmap = await store.getWorkMap(workmapId);
         if (!workmap || workmap.workflow_id !== workflow.id) throw notFound('Work Map not found');
-        const [learner, expert] = await Promise.all([
-          store.findLearnerByUser(workflow.org_id, user.id),
-          store.getExpert(workmap.expert_id),
-        ]);
-        tokenReq = {
-          agent: 'tutor',
-          phase: 'tutoring',
-          session_id: sessionId,
-          language,
-          dynamic_variables: {
-            ...base,
-            learner_name: learner?.display_name ?? 'the learner',
-            expert_name: expert?.display_name ?? 'the expert',
-          },
-        };
+        const learner = await store.findLearnerByUser(workflow.org_id, user.id);
         row = { ...common, phase: 'tutoring', expert_id: null, learner_id: learner?.id ?? null, workmap_id: workmap.id };
       }
+      const tokenReq = await voiceRequestFor(store, row, workflow.name);
 
       // Get the voice token before inserting, so a voice failure leaves no orphan session row.
       const el = await voice.getToken(tokenReq);
@@ -167,10 +136,9 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
       const ended = await store.endSession(session.id);
       await store.closeOffRecordSpans(ended.id, Math.max(0, Date.now() - Date.parse(ended.started_at)));
       await publishLifecycle(bus, ended, 'ended');
-      await opts.onEnded?.(ended.id).catch((err) =>
+      await opts.onEnded?.(ended).catch((err) =>
         request.log.warn({ err, session_id: ended.id, org_id: ended.org_id }, 'session cleanup failed'),
       );
-      // TODO(proxies): remove the meeting bot via meetbot DELETE /internal/bots/:sid when mode is "meeting".
       request.log.info({ session_id: ended.id, org_id: ended.org_id }, 'session ended');
       return { session_id: ended.id, ended_at: ended.ended_at };
     },

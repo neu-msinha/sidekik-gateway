@@ -14,6 +14,7 @@ export const MOCK = {
   workflow: '00000000-0000-4000-8000-00000000b001',
   workmap: '00000000-0000-4000-8000-00000000c001',
   session: '00000000-0000-4000-8000-00000000d001',
+  tutorSession: '00000000-0000-4000-8000-00000000d002',
   expert: '00000000-0000-4000-8000-00000000e001',
   learner: '00000000-0000-4000-8000-00000000f001',
 };
@@ -76,6 +77,23 @@ const store = memoryStore({
       started_at: now,
       ended_at: null,
     },
+    {
+      id: MOCK.tutorSession,
+      org_id: MOCK.org,
+      workflow_id: MOCK.workflow,
+      kind: 'tutor',
+      mode: 'browser',
+      phase: 'tutoring',
+      expert_id: null,
+      learner_id: MOCK.learner,
+      workmap_id: MOCK.workmap,
+      language: 'en',
+      el_agent_id: 'mock-tutor',
+      off_record: false,
+      consent_at: now,
+      started_at: now,
+      ended_at: null,
+    },
   ],
 });
 
@@ -104,6 +122,41 @@ app = await buildApp({
       return { conversation_token: `mock-conversation-token-${req.session_id}`, agent_id: `mock-${req.agent}` };
     },
   },
+  // Teammates' services, stubbed. Presave applies demo guardrail G1 so the H18 catch can be tried here.
+  tutor: {
+    async presave(sessionId, state) {
+      const g1 = (state.net_amount ?? 0) > 5000 && state.category === 'equipment' && state.cost_center !== '0400';
+      app.log.info({ session_id: sessionId, state, allow: !g1 }, 'mock tutor presave');
+      return g1
+        ? { allow: false, guardrail_id: 'G1', quote: 'Equipment over €5,000 is always capex.', step_id: 'S4' }
+        : { allow: true };
+    },
+    async tool(name, body) {
+      app.log.info({ tool: name, body }, 'mock tutor tool');
+      return { mock: true, tool: name };
+    },
+  },
+  mapper: {
+    async publish(id) {
+      return { job_id: `mock-job-${id}` };
+    },
+    async export(id) {
+      return {
+        contentType: 'text/markdown',
+        disposition: `attachment; filename="AGENT_RULES-${id}.md"`,
+        body: Buffer.from('# Agent rules (mock)\n- G1: Equipment over €5,000 is always capex.\n'),
+      };
+    },
+    async recallContext() {
+      return { snippets: [{ text: 'Über 5.000 immer 0400.', t_ms: 192000, source: 'turn' }] };
+    },
+  },
+  meetbot: {
+    async createBot(sessionId) {
+      return { bot_id: `mock-bot-${sessionId}` };
+    },
+    async removeBot() {},
+  },
   bus,
   broadcaster: printBroadcaster,
   redactor: presidioRedactor({ analyzerUrl: env.PRESIDIO_ANALYZER_URL, anonymizerUrl: env.PRESIDIO_ANONYMIZER_URL }),
@@ -129,6 +182,7 @@ const skToken = await signSessionToken(
 app.log.info(
   {
     session_id: MOCK.session,
+    tutor_session_id: MOCK.tutorSession,
     ws_client: `ws://localhost:${env.PORT}/ws/client/${MOCK.session}?t=${skToken}`,
     bearer_tokens: Object.keys(USERS),
     internal_token: env.SK_INTERNAL_TOKEN,

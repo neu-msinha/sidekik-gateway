@@ -1,10 +1,11 @@
 import { buildApp } from './app.js';
-import { supabaseVerifier } from './auth.js';
+import { cachedVerifier, supabaseVerifier } from './auth.js';
 import { createBus } from './contracts/index.js';
 import { loadEnv } from './env.js';
 import { httpHealth } from './routes/health.js';
 import { supabaseBroadcaster } from './services/realtime.js';
 import { presidioRedactor } from './services/redact.js';
+import { httpMapperClient, httpMeetbotClient, httpTutorClient } from './services/upstreams.js';
 import { httpVoiceClient } from './services/voice.js';
 import { supabaseStore } from './store/supabase.js';
 import { createSupabase, supabaseHealth } from './supabase.js';
@@ -21,9 +22,12 @@ const bus = createBus(env.REDIS_URL, 'gateway', {
 
 app = await buildApp({
   env,
-  verifyUser: supabaseVerifier(supabase),
+  verifyUser: cachedVerifier(supabaseVerifier(supabase)),
   store: supabaseStore(supabase),
   voice: httpVoiceClient({ baseUrl: env.VOICE_URL, internalToken: env.SK_INTERNAL_TOKEN }),
+  tutor: httpTutorClient(env.TUTOR_URL, env.SK_INTERNAL_TOKEN),
+  mapper: httpMapperClient(env.MAPPER_URL, env.SK_INTERNAL_TOKEN),
+  meetbot: httpMeetbotClient(env.MEETBOT_URL, env.SK_INTERNAL_TOKEN),
   bus,
   broadcaster: supabaseBroadcaster(supabase),
   redactor: presidioRedactor({
