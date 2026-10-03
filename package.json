@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@fastify/cors": "^11",
+    "@fastify/rate-limit": "^10",
     "@fastify/websocket": "^11",
     "@supabase/supabase-js": "^2",
     "fastify": "^5",

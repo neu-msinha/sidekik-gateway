@@ -22,7 +22,7 @@ export const replayRoutes: FastifyPluginAsyncZod<ReplayRoutesOptions> = async (a
       },
     },
     async (request, reply) => {
-      const original = await sessionForUser(opts.store, request.params.sid, request.user!.id);
+      const original = await sessionForUser(opts.store, request, request.params.sid);
       const role = (await opts.store.getRole(original.org_id, request.user!.id))!;
       if (!CAN_REPLAY.includes(role)) throw forbidden(`Role ${role} cannot start a replay`);
 

@@ -3,6 +3,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { signSessionToken } from '../contracts/index.js';
 import { HttpError, notFound, unauthorized } from '../errors.js';
+import { annotate } from '../logging.js';
 import { voiceRequestFor } from '../services/voice-request.js';
 import type { VoiceClient } from '../services/voice.js';
 import type { Store } from '../store/types.js';
@@ -30,11 +31,12 @@ export const agentHostRoutes: FastifyPluginAsyncZod<AgentHostOptions> = async (a
     async (request) => {
       const session = await store.getSession(request.body.sid);
       if (!session) throw notFound('Session not found');
+      annotate(request, { session_id: session.id, org_id: session.org_id });
       if (session.ended_at) throw new HttpError(409, 'session_ended', 'Session has ended');
       const t = randomBytes(32).toString('base64url');
       const expires_at = new Date(Date.now() + AGENT_HOST_TOKEN_TTL_MS).toISOString();
       await store.insertAgentHostToken({ session, token: t, expires_at });
-      request.log.info({ session_id: session.id, org_id: session.org_id }, 'agent-host token issued');
+      request.log.info('agent-host token issued');
       return { t, expires_at };
     },
   );
@@ -48,6 +50,7 @@ export const agentHostRoutes: FastifyPluginAsyncZod<AgentHostOptions> = async (a
       if (!sid) throw unauthorized('Invalid, used or expired agent-host token');
       const session = await store.getSession(sid);
       if (!session) throw notFound('Session not found');
+      annotate(request, { session_id: session.id, org_id: session.org_id });
       if (session.ended_at) throw new HttpError(409, 'session_ended', 'Session has ended');
 
       const tokenReq = await voiceRequestFor(store, session);
@@ -56,7 +59,7 @@ export const agentHostRoutes: FastifyPluginAsyncZod<AgentHostOptions> = async (a
         { sid: session.id, org: session.org_id, role: 'agent_host', kind: session.kind },
         opts.sessionSecret,
       );
-      request.log.info({ session_id: session.id, org_id: session.org_id, phase: session.phase }, 'agent host claimed');
+      request.log.info({ phase: session.phase }, 'agent host claimed');
       return { session_id: session.id, sk_token, el: { ...el, dynamic_variables: tokenReq.dynamic_variables } };
     },
   );

@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { signSessionToken, type Bus } from '../contracts/index.js';
 import { forbidden, HttpError, notFound } from '../errors.js';
+import { annotate } from '../logging.js';
 import { publishLifecycle } from '../services/lifecycle.js';
 import { sessionForUser as loadSessionForUser } from './access.js';
 import { offRecordBody } from './off-record-body.js';
@@ -35,7 +37,7 @@ const SessionParams = z.object({ id: z.string().uuid() });
 export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async (app, opts) => {
   const { store, voice, bus } = opts;
 
-  const sessionForUser = (id: string, userId: string) => loadSessionForUser(store, id, userId);
+  const sessionForUser = (request: FastifyRequest, id: string) => loadSessionForUser(store, request, id);
 
   app.post(
     '/v1/sessions',
@@ -81,13 +83,14 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
       // Get the voice token before inserting, so a voice failure leaves no orphan session row.
       const el = await voice.getToken(tokenReq);
       const session = await store.insertSession({ ...row, el_agent_id: el.agent_id });
+      annotate(request, { session_id: session.id, org_id: session.org_id });
       const sk_token = await signSessionToken(
         { sid: session.id, org: session.org_id, role, kind },
         opts.sessionSecret,
       );
       await publishLifecycle(bus, session, 'started');
 
-      request.log.info({ session_id: session.id, org_id: session.org_id, kind, mode }, 'session started');
+      request.log.info({ kind, mode }, 'session started');
       return reply.code(201).send({
         session_id: session.id,
         sk_token,
@@ -114,12 +117,12 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
     },
     async (request) => {
       const user = request.user!;
-      const session = await sessionForUser(request.params.id, user.id);
+      const session = await sessionForUser(request, request.params.id);
       if (session.ended_at) throw new HttpError(409, 'session_ended', 'Session has ended');
 
       const updated = await store.recordConsent({ session, user_id: user.id, ...request.body });
       request.log.info(
-        { session_id: session.id, org_id: session.org_id, scopes: request.body.scopes },
+        { scopes: request.body.scopes },
         'consent recorded',
       );
       return { session_id: updated.id, consent_at: updated.consent_at };
@@ -130,16 +133,16 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
     '/v1/sessions/:id/end',
     { onRequest: app.requireUser, schema: { params: SessionParams } },
     async (request) => {
-      const session = await sessionForUser(request.params.id, request.user!.id);
+      const session = await sessionForUser(request, request.params.id);
       if (session.ended_at) return { session_id: session.id, ended_at: session.ended_at };
 
       const ended = await store.endSession(session.id);
       await store.closeOffRecordSpans(ended.id, Math.max(0, Date.now() - Date.parse(ended.started_at)));
       await publishLifecycle(bus, ended, 'ended');
       await opts.onEnded?.(ended).catch((err) =>
-        request.log.warn({ err, session_id: ended.id, org_id: ended.org_id }, 'session cleanup failed'),
+        request.log.warn({ err }, 'session cleanup failed'),
       );
-      request.log.info({ session_id: ended.id, org_id: ended.org_id }, 'session ended');
+      request.log.info('session ended');
       return { session_id: ended.id, ended_at: ended.ended_at };
     },
   );
@@ -152,7 +155,7 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
       schema: { params: SessionParams, body: offRecordBody(['ui', 'agent', 'chat'], 'ui') },
     },
     async (request) => {
-      const session = await sessionForUser(request.params.id, request.user!.id);
+      const session = await sessionForUser(request, request.params.id);
       if (session.ended_at) throw new HttpError(409, 'session_ended', 'Session has ended');
       return opts.offRecord.set(session, request.body, request.log);
     },
@@ -166,7 +169,7 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
       schema: { params: SessionParams, body: z.object({ event: z.literal('task_done') }) },
     },
     async (request) => {
-      const session = await sessionForUser(request.params.id, request.user!.id);
+      const session = await sessionForUser(request, request.params.id);
       return opts.phase.taskDone(session, request.log);
     },
   );
