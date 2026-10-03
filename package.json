@@ -14,7 +14,9 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "dev:mock": "tsx watch src/dev/mock.ts",
+    "dev:replay": "tsx src/dev/replay.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11",
@@ -25,6 +27,7 @@
     "ioredis": "^5",
     "jose": "^5",
     "ulid": "^2",
+    "ws": "^8",
     "zod": "^3"
   },
   "devDependencies": {

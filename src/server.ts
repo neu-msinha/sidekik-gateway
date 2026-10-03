@@ -3,6 +3,7 @@ import { supabaseVerifier } from './auth.js';
 import { createBus } from './contracts/index.js';
 import { loadEnv } from './env.js';
 import { httpHealth } from './routes/health.js';
+import { supabaseBroadcaster } from './services/realtime.js';
 import { presidioRedactor } from './services/redact.js';
 import { httpVoiceClient } from './services/voice.js';
 import { supabaseStore } from './store/supabase.js';
@@ -10,16 +11,21 @@ import { createSupabase, supabaseHealth } from './supabase.js';
 
 const env = loadEnv();
 const supabase = createSupabase(env);
-const bus = createBus(env.REDIS_URL, 'gateway');
-
 const pretty = process.env.NODE_ENV !== 'production' && process.stdout.isTTY;
 
-const app = await buildApp({
+let app: Awaited<ReturnType<typeof buildApp>>;
+const bus = createBus(env.REDIS_URL, 'gateway', {
+  warn: (obj, msg) => app.log.warn(obj, msg),
+  error: (obj, msg) => app.log.error(obj, msg),
+});
+
+app = await buildApp({
   env,
   verifyUser: supabaseVerifier(supabase),
   store: supabaseStore(supabase),
   voice: httpVoiceClient({ baseUrl: env.VOICE_URL, internalToken: env.SK_INTERNAL_TOKEN }),
   bus,
+  broadcaster: supabaseBroadcaster(supabase),
   redactor: presidioRedactor({
     analyzerUrl: env.PRESIDIO_ANALYZER_URL,
     anonymizerUrl: env.PRESIDIO_ANONYMIZER_URL,
