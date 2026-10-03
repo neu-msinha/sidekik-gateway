@@ -37,3 +37,11 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
+
+/** A dependency that answers GET <url> with a 2xx. */
+export function httpHealth(url: string): HealthCheck {
+  return async () => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`GET ${url} returned ${res.status}`);
+  };
+}

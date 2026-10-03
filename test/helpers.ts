@@ -41,6 +41,7 @@ export function buildTestApp(overrides: Partial<AppDeps> = {}) {
     store: memoryStore(),
     voice: fakeVoice(),
     bus: fakeBus(),
+    redactor: { redact: async (text) => ({ text, engine: 'presidio', entities: [] }) },
     logger: false,
     ...overrides,
   });

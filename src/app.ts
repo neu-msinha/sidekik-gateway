@@ -1,5 +1,6 @@
 import Fastify, { type FastifyError, type FastifyServerOptions } from 'fastify';
 import cors from '@fastify/cors';
+import websocket from '@fastify/websocket';
 import {
   hasZodFastifySchemaValidationErrors,
   serializerCompiler,
@@ -11,7 +12,11 @@ import { requireSharedSecret, requireUser, type VerifyUser } from './auth.js';
 import type { Bus } from './contracts/index.js';
 import { HttpError } from './errors.js';
 import { healthRoutes, type HealthCheck } from './routes/health.js';
+import { internalRoutes } from './routes/internal.js';
 import { sessionRoutes } from './routes/sessions.js';
+import { wsClientRoutes } from './routes/ws-client.js';
+import { OffRecordState } from './services/off-record.js';
+import type { Redactor } from './services/redact.js';
 import type { VoiceClient } from './services/voice.js';
 import type { Store } from './store/types.js';
 import { VERSION } from './version.js';
@@ -23,11 +28,14 @@ export type AppDeps = {
   store: Store;
   voice: VoiceClient;
   bus: Bus;
+  redactor: Redactor;
+  offRecord?: OffRecordState;
   logger?: FastifyServerOptions['logger'];
 };
 
 export async function buildApp(deps: AppDeps) {
   const { env } = deps;
+  const offRecord = deps.offRecord ?? new OffRecordState();
 
   const app = Fastify({
     logger: deps.logger ?? { level: env.LOG_LEVEL },
@@ -66,6 +74,8 @@ export async function buildApp(deps: AppDeps) {
     credentials: true,
   });
 
+  await app.register(websocket, { options: { maxPayload: 64 * 1024 } });
+
   app.decorate('requireUser', requireUser(deps.verifyUser));
   app.decorate('requireInternal', requireSharedSecret('x-internal-token', env.SK_INTERNAL_TOKEN));
   app.decorate('requireToolSecret', requireSharedSecret('x-sidekik-tool-secret', env.SK_TOOL_SECRET));
@@ -78,6 +88,14 @@ export async function buildApp(deps: AppDeps) {
     sessionSecret: env.SK_SESSION_SECRET,
     ingestUrl: env.INGEST_URL,
   });
+  await app.register(wsClientRoutes, {
+    store: deps.store,
+    bus: deps.bus,
+    redactor: deps.redactor,
+    offRecord,
+    sessionSecret: env.SK_SESSION_SECRET,
+  });
+  await app.register(internalRoutes, { redactor: deps.redactor });
 
   return app;
 }
