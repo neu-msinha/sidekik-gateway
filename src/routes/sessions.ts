@@ -6,6 +6,7 @@ import { forbidden, HttpError, notFound } from '../errors.js';
 import { publishLifecycle } from '../services/lifecycle.js';
 import { offRecordBody } from './off-record-body.js';
 import type { OffRecordController } from '../services/off-record.js';
+import type { PhaseService } from '../services/phase.js';
 import type { VoiceClient, VoiceTokenRequest } from '../services/voice.js';
 import type { NewSession, Role, SessionRow, Store } from '../store/types.js';
 
@@ -17,6 +18,7 @@ export type SessionRoutesOptions = {
   /** Public perception base URL, e.g. wss://ingest.sidekik.live */
   ingestUrl: string;
   offRecord: OffRecordController;
+  phase: PhaseService;
   /** Releases per-session resources (Realtime channel, debounce and off-record state). */
   onEnded?: (sessionId: string) => Promise<void>;
 };
@@ -185,6 +187,19 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
       const session = await sessionForUser(request.params.id, request.user!.id);
       if (session.ended_at) throw new HttpError(409, 'session_ended', 'Session has ended');
       return opts.offRecord.set(session, request.body, request.log);
+    },
+  );
+
+  // The expert clicks "Task done": phase becomes building and mapper starts the draft (DESIGN §5).
+  app.post(
+    '/v1/sessions/:id/phase',
+    {
+      onRequest: app.requireUser,
+      schema: { params: SessionParams, body: z.object({ event: z.literal('task_done') }) },
+    },
+    async (request) => {
+      const session = await sessionForUser(request.params.id, request.user!.id);
+      return opts.phase.taskDone(session, request.log);
     },
   );
 };
