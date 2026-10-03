@@ -1,4 +1,4 @@
-# Sidekik: System Architecture (v0.1)
+# Sidekik: System Architecture (v0.2)
 
 > **Sidekik** is an AI apprentice. It watches an expert work on their screen and asks why at the right moments. It turns that session into a Work Map, then coaches the next hire through the same work on their own screen.
 > Hack-Nation 7th Global AI Hackathon, Challenge 01 (ElevenLabs) · Domain: **sidekik.live** (Cloudflare) · Team: **Sahil, Aadil, Mayukh**
@@ -55,7 +55,7 @@ flowchart LR
   VO[sidekik-voice<br/>hooks.sidekik.live]
   MB[sidekik-meetbot<br/>bot.sidekik.live]
   BUS{{Redis Streams bus}}
-  SB[(Supabase<br/>Postgres · pgvector · Storage · Auth · Realtime)]
+  SB[(Supabase<br/>Postgres + full-text search · Storage · Auth · Realtime)]
   PII[Presidio]
 
   REC -- H.264 screenshare + speech events --> MB --> PER
@@ -70,11 +70,17 @@ flowchart LR
   EL -- post-call webhook --> VO
   EL -- webhook tools / MCP --> GW & TUT
   BR --> JEV[(TypeSafe Jev)]
-  PER --> VLM[(Gemini Flash-Lite / Haiku)]
+  PER --> VLM[(Claude Haiku 4.5 vision)]
   MAP --> LLM[(Claude Sonnet)]
   GW & PER --> PII
   GW & PER & BR & MAP & TUT & VO --> SB
 ```
+
+**Model providers:** every LLM and vision call our services make uses the **Claude API** with the team's `ANTHROPIC_API_KEY`, server-side only:
+- Haiku 4.5 for vision and fast drafting
+- Sonnet 5.5 for building the Work Map
+
+Jev (TypeSafe) is the only other model vendor. The voice agents' LLM runs inside ElevenLabs (see sidekik-voice DESIGN §3). Retrieval uses Postgres full-text search, so there is no embeddings vendor.
 
 **Core design rule:** the ElevenAgents voice session always runs in a browser page. That page is the Capture Room, the Tutor Room, or `/agent-host` running inside the Recall meeting bot. No backend service streams audio. Services decide *what the agent should do* and publish an **agent command**. The gateway forwards each command to the page, and the page tells the agent. Because of this, browser mode and meeting mode share one code path.
 
@@ -253,7 +259,7 @@ type DecisionResult   = { id: DecisionId; answer: string|number|boolean; probabi
 type DecisionId = "D1"|"D2"|"D3"|"D4"|"D5"|"D6"|"D7"|"D8"|"D9"|"D10"|"D11"|"D12";
 
 type WorkMapPublished = { workmap_id: string; workflow_id: string; version: number };
-type UsageRecord = { service: string; vendor: "elevenlabs"|"typesafe"|"anthropic"|"gemini"|"recall";
+type UsageRecord = { service: string; vendor: "elevenlabs"|"typesafe"|"anthropic"|"recall";
   units: number; unit: "tokens_in"|"tokens_out"|"minutes"|"hours"; cost_usd: number;
   counterfactual_usd?: number };
 ```
@@ -275,7 +281,7 @@ All tables live in `public` because Lovable reads `public`. Every table has `org
 | meetbot (Aadil) | `meeting_bots` |
 | perception (Sahil) | `screen_events`, `keyframes`, `clips` |
 | brain (Sahil) | `questions`, `answers`, `decisions_log` |
-| mapper (Mayukh) | `work_maps`, `work_map_steps`, `guardrails`, `step_evidence`, `open_items`, `kb_chunks` (pgvector), `expert_memory` |
+| mapper (Mayukh) | `work_maps`, `work_map_steps`, `guardrails`, `step_evidence`, `open_items`, `kb_chunks` (full-text search), `expert_memory` |
 | tutor (Mayukh) | `learner_attempts`, `interventions`, `mastery`, `gap_flags` |
 
 **Storage buckets** (all private; access only through signed URLs with a 10-minute TTL):
@@ -330,7 +336,6 @@ Cloudflare settings and caveats:
 | `SK_TOOL_SECRET` | ✓ | | | | ✓ | ✓ | | |
 | `TYPESAFE_API_KEY` (+ `OPENROUTER_API_KEY` fallback) | | | ✓ | | | | | |
 | `ANTHROPIC_API_KEY` | | ✓ | ✓ | ✓ | | | | |
-| `GEMINI_API_KEY` | | ✓ | | ✓ | | | | |
 | `ELEVENLABS_API_KEY`, `EL_*_AGENT_ID`, `EL_WEBHOOK_SECRET` | | | | | | ✓ | | |
 | `RECALL_API_KEY`, `RECALL_REGION`, `RECALL_WS_SECRET` | | | | | | | ✓ | |
 | `PRESIDIO_*_URL` | ✓ | ✓ | | | | | | |
