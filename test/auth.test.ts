@@ -3,9 +3,9 @@ import { SECRETS, TEST_USER, VALID_JWT, buildTestApp } from './helpers.js';
 
 async function appWithProtectedRoutes() {
   const app = await buildTestApp();
-  app.get('/user-only', { preHandler: app.requireUser }, async (req) => ({ user: req.user }));
-  app.post('/internal/ping', { preHandler: app.requireInternal }, async () => ({ ok: true }));
-  app.post('/v1/tools/ping', { preHandler: app.requireToolSecret }, async () => ({ ok: true }));
+  app.get('/user-only', { onRequest: app.requireUser }, async (req) => ({ user: req.user }));
+  app.post('/internal/ping', { onRequest: app.requireInternal }, async () => ({ ok: true }));
+  app.post('/v1/tools/ping', { onRequest: app.requireToolSecret }, async () => ({ ok: true }));
   return app;
 }
 

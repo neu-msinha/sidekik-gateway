@@ -25,6 +25,9 @@ export const envSchema = z.object({
   TUTOR_URL: url,
   BRAIN_URL: url,
 
+  // Public perception base URL returned to the page as ingest_url (wss://ingest.sidekik.live in prod).
+  INGEST_URL: url,
+
   // Comma-separated list of allowed browser origins.
   CORS_ORIGIN: z
     .string()
