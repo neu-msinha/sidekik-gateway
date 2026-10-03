@@ -9,14 +9,16 @@ import {
 } from 'fastify-type-provider-zod';
 import type { Env } from './env.js';
 import { requireSharedSecret, requireUser, type VerifyUser } from './auth.js';
-import { STREAMS, type AgentCommand, type Bus } from './contracts/index.js';
+import { STREAMS, type AgentCommand, type Bus, type UsageRecord } from './contracts/index.js';
 import { HttpError } from './errors.js';
 import { healthRoutes, type HealthCheck } from './routes/health.js';
 import { agentHostRoutes } from './routes/agent-host.js';
+import { costRoutes } from './routes/costs.js';
 import { internalRoutes } from './routes/internal.js';
 import { proxyRoutes, toolRoutes } from './routes/proxies.js';
 import { sessionRoutes } from './routes/sessions.js';
 import { wsClientRoutes } from './routes/ws-client.js';
+import { createCostLedger } from './services/costs.js';
 import { createEgress } from './services/egress.js';
 import { createOffRecordController, OffRecordState } from './services/off-record.js';
 import { createPhaseService } from './services/phase.js';
@@ -122,14 +124,20 @@ export async function buildApp(deps: AppDeps) {
     state: offRecord,
     onBackOnRecord: (session, log) => phase.resumeAfterOffRecord(session, log),
   });
-  let stopEgress: (() => void) | undefined;
+  const recordUsage = createCostLedger({ store: deps.store, log: app.log.child({ component: 'cost_ledger' }) });
+
+  // Bus consumers start once the app is ready and stop when it closes.
+  const stops: (() => void)[] = [];
   app.addHook('onReady', async () => {
-    stopEgress = deps.bus.consume<AgentCommand>(STREAMS.commands, async (ev) => {
-      await egress.handle(ev);
-    });
+    stops.push(
+      deps.bus.consume<AgentCommand>(STREAMS.commands, async (ev) => {
+        await egress.handle(ev);
+      }),
+      deps.bus.consume<UsageRecord>(STREAMS.usage, recordUsage),
+    );
   });
   app.addHook('onClose', async () => {
-    stopEgress?.();
+    for (const stop of stops.splice(0)) stop();
     await deps.broadcaster.close();
   });
 
@@ -170,6 +178,7 @@ export async function buildApp(deps: AppDeps) {
   });
   await app.register(proxyRoutes, { store: deps.store, tutor: deps.tutor, mapper: deps.mapper, meetbot: deps.meetbot });
   await app.register(toolRoutes, { tutor: deps.tutor, mapper: deps.mapper });
+  await app.register(costRoutes, { store: deps.store });
   await app.register(agentHostRoutes, { store: deps.store, voice: deps.voice, sessionSecret: env.SK_SESSION_SECRET });
 
   return app;

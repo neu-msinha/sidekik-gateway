@@ -1,6 +1,7 @@
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import type {
   CaptureTable,
+  CostEntry,
   NewSession,
   Person,
   Role,
@@ -246,6 +247,34 @@ export function supabaseStore(db: SupabaseClient): Store {
         'claim agent-host token',
       );
       return row?.session_id ?? null;
+    },
+
+    async insertCost(row) {
+      const { data, error } = await db
+        .from('cost_ledger')
+        .upsert(row, { onConflict: 'id', ignoreDuplicates: true })
+        .select('id');
+      if (error) throw new Error(`insert cost: ${error.message}`);
+      return (data ?? []).length > 0;
+    },
+
+    async listCosts(sessionId) {
+      const rows = unwrap(
+        await db
+          .from('cost_ledger')
+          .select('id, org_id, session_id, service, vendor, units, unit, cost_usd, counterfactual_usd, created_at')
+          .eq('session_id', sessionId)
+          .order('created_at', { ascending: true })
+          .returns<CostEntry[]>(),
+        'list costs',
+      );
+      // numeric columns can arrive as strings; normalize.
+      return (rows ?? []).map((r) => ({
+        ...r,
+        units: Number(r.units),
+        cost_usd: Number(r.cost_usd),
+        counterfactual_usd: r.counterfactual_usd === null ? null : Number(r.counterfactual_usd),
+      }));
     },
 
     async setOffRecord(sessionId, on) {

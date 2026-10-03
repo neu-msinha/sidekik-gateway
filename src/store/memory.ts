@@ -1,6 +1,7 @@
 import {
   CAPTURE_TABLES,
   type CaptureTable,
+  type CostEntry,
   type OffRecordSource,
   type Person,
   type Role,
@@ -28,6 +29,7 @@ export type MemoryData = {
   steps: { id: string; work_map_id: string; org_id: string }[];
   clips: { step_id: string; storage_path: string; created_at: string }[];
   agentHostTokens: { token: string; session_id: string; expires_at: string; used_at: string | null }[];
+  costs: CostEntry[];
 };
 
 /** In-memory Store for tests and `pnpm dev:mock`. Not for production: nothing is persisted. */
@@ -47,6 +49,7 @@ export function memoryStore(seed: Partial<MemoryData> = {}): Store & { data: Mem
     steps: [],
     clips: [],
     agentHostTokens: [],
+    costs: [],
     ...seed,
   };
   const person = (p?: Person) => (p ? { id: p.id, display_name: p.display_name } : null);
@@ -112,6 +115,13 @@ export function memoryStore(seed: Partial<MemoryData> = {}): Store & { data: Mem
       t.used_at = new Date().toISOString();
       return t.session_id;
     },
+    insertCost: async (row) => {
+      if (data.costs.some((c) => c.id === row.id)) return false;
+      data.costs.push({ ...row, created_at: new Date().toISOString() });
+      return true;
+    },
+    listCosts: async (sessionId) =>
+      data.costs.filter((c) => c.session_id === sessionId).sort((a, b) => a.created_at.localeCompare(b.created_at)),
     setOffRecord: async (id, on) => {
       data.sessions.find((x) => x.id === id)!.off_record = on;
     },

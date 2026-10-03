@@ -46,6 +46,20 @@ export type OffRecordSpanInput = {
 export const CAPTURE_TABLES = ['transcript_turns', 'screen_events', 'keyframes', 'questions'] as const;
 export type CaptureTable = (typeof CAPTURE_TABLES)[number];
 
+export type CostRow = {
+  /** Derived from the bus event id, so a redelivered usage event maps to the same row. */
+  id: string;
+  org_id: string;
+  session_id: string | null;
+  service: string;
+  vendor: 'elevenlabs' | 'typesafe' | 'anthropic' | 'recall';
+  units: number;
+  unit: string;
+  cost_usd: number;
+  counterfactual_usd: number | null;
+};
+export type CostEntry = CostRow & { created_at: string };
+
 export type ConsentInput = {
   session: SessionRow;
   user_id: string;
@@ -88,6 +102,10 @@ export interface Store {
   insertAgentHostToken(input: { session: SessionRow; token: string; expires_at: string }): Promise<void>;
   /** Marks an unused, unexpired token as used and returns its session id; null otherwise. Atomic. */
   claimAgentHostToken(token: string): Promise<string | null>;
+
+  /** Inserts a cost_ledger row unless one with the same id exists. Returns whether it was new. */
+  insertCost(row: CostRow): Promise<boolean>;
+  listCosts(sessionId: string): Promise<CostEntry[]>;
 
   setOffRecord(sessionId: string, on: boolean): Promise<void>;
   openOffRecordSpan(span: OffRecordSpanInput): Promise<void>;
