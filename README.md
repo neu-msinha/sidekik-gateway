@@ -52,6 +52,7 @@ pnpm dev            # tsx watch, reads .env
 docker compose -f ../sidekik-platform/dev/docker-compose.yml up -d   # Redis (+ Presidio)
 pnpm dev:mock                                                         # prints a ready /ws/client URL and dev tokens
 pnpm dev:replay dev/fixtures/capture-commands.jsonl                   # watch the log for "realtime cmd → …"
+pnpm dev:replay dev/fixtures/usage.jsonl                              # then GET /v1/costs/<session> as dev-admin
 ```
 
 The mock seeds a consented capture session (`…d001`, Sabine) and tutor session (`…d002`, Lena), and accepts `Authorization: Bearer dev-sabine | dev-lena | dev-admin`. Tutor, mapper and meetbot are stubbed; the presave stub blocks demo guardrail G1 (equipment over €5,000 not on cost center 0400).

@@ -9,22 +9,26 @@ import {
 } from 'fastify-type-provider-zod';
 import type { Env } from './env.js';
 import { requireSharedSecret, requireUser, type VerifyUser } from './auth.js';
-import { STREAMS, type AgentCommand, type Bus } from './contracts/index.js';
+import { STREAMS, type AgentCommand, type Bus, type UsageRecord } from './contracts/index.js';
 import { HttpError } from './errors.js';
 import { healthRoutes, type HealthCheck } from './routes/health.js';
 import { agentHostRoutes } from './routes/agent-host.js';
+import { costRoutes } from './routes/costs.js';
+import { replayRoutes } from './routes/replay.js';
 import { internalRoutes } from './routes/internal.js';
 import { proxyRoutes, toolRoutes } from './routes/proxies.js';
 import { sessionRoutes } from './routes/sessions.js';
 import { wsClientRoutes } from './routes/ws-client.js';
+import { createCostLedger } from './services/costs.js';
 import { createEgress } from './services/egress.js';
 import { createOffRecordController, OffRecordState } from './services/off-record.js';
 import { createPhaseService } from './services/phase.js';
+import { createReplay, RECORDED_STREAMS, RECORDER_GROUP } from './services/replay.js';
 import type { Broadcaster } from './services/realtime.js';
 import type { Redactor } from './services/redact.js';
 import type { MapperClient, MeetbotClient, TutorClient } from './services/upstreams.js';
 import type { VoiceClient } from './services/voice.js';
-import type { Store } from './store/types.js';
+import type { SessionRow, Store } from './store/types.js';
 import { VERSION } from './version.js';
 
 export type AppDeps = {
@@ -102,11 +106,32 @@ export async function buildApp(deps: AppDeps) {
   app.decorate('requireInternal', requireSharedSecret('x-internal-token', env.SK_INTERNAL_TOKEN));
   app.decorate('requireToolSecret', requireSharedSecret('x-sidekik-tool-secret', env.SK_TOOL_SECRET));
 
+  /** Releases per-session state once a session (or a replay) is over. */
+  const cleanupSession = async (session: SessionRow) => {
+    egress.forget(session.id);
+    phase.forget(session.id);
+    offRecord.forget(session.id);
+    if (session.mode === 'meeting') {
+      await deps.meetbot.removeBot(session.id).catch((err) =>
+        app.log.warn({ err, session_id: session.id, org_id: session.org_id }, 'meeting bot removal failed'),
+      );
+    }
+    await deps.broadcaster.release(session.id);
+  };
+
+  const replay = createReplay({
+    store: deps.store,
+    bus: deps.bus,
+    offRecord,
+    log: app.log.child({ component: 'replay' }),
+    onFinished: cleanupSession,
+  });
   const egress = createEgress({
     broadcaster: deps.broadcaster,
     offRecord,
     store: deps.store,
     log: app.log.child({ component: 'egress' }),
+    onSent: (ev) => replay.record(STREAMS.commands, ev),
   });
   const phase = createPhaseService({
     store: deps.store,
@@ -122,14 +147,30 @@ export async function buildApp(deps: AppDeps) {
     state: offRecord,
     onBackOnRecord: (session, log) => phase.resumeAfterOffRecord(session, log),
   });
-  let stopEgress: (() => void) | undefined;
+  const recordUsage = createCostLedger({ store: deps.store, log: app.log.child({ component: 'cost_ledger' }) });
+
+  // Bus consumers start once the app is ready and stop when it closes.
+  const stops: (() => void)[] = [];
   app.addHook('onReady', async () => {
-    stopEgress = deps.bus.consume<AgentCommand>(STREAMS.commands, async (ev) => {
-      await egress.handle(ev);
-    });
+    stops.push(
+      deps.bus.consume<AgentCommand>(STREAMS.commands, async (ev) => {
+        await egress.handle(ev);
+      }),
+      deps.bus.consume<UsageRecord>(STREAMS.usage, recordUsage),
+      ...RECORDED_STREAMS.map((stream) =>
+        deps.bus.consume(
+          stream,
+          async (ev) => {
+            await replay.record(stream, ev);
+          },
+          { group: RECORDER_GROUP },
+        ),
+      ),
+    );
   });
   app.addHook('onClose', async () => {
-    stopEgress?.();
+    for (const stop of stops.splice(0)) stop();
+    replay.stopAll();
     await deps.broadcaster.close();
   });
 
@@ -142,17 +183,7 @@ export async function buildApp(deps: AppDeps) {
     ingestUrl: env.INGEST_URL,
     offRecord: offRecordController,
     phase,
-    onEnded: async (session) => {
-      egress.forget(session.id);
-      phase.forget(session.id);
-      offRecord.forget(session.id);
-      if (session.mode === 'meeting') {
-        await deps.meetbot.removeBot(session.id).catch((err) =>
-          app.log.warn({ err, session_id: session.id, org_id: session.org_id }, 'meeting bot removal failed'),
-        );
-      }
-      await deps.broadcaster.release(session.id);
-    },
+    onEnded: cleanupSession,
   });
   await app.register(wsClientRoutes, {
     store: deps.store,
@@ -170,6 +201,8 @@ export async function buildApp(deps: AppDeps) {
   });
   await app.register(proxyRoutes, { store: deps.store, tutor: deps.tutor, mapper: deps.mapper, meetbot: deps.meetbot });
   await app.register(toolRoutes, { tutor: deps.tutor, mapper: deps.mapper });
+  await app.register(costRoutes, { store: deps.store });
+  await app.register(replayRoutes, { store: deps.store, replay, sessionSecret: env.SK_SESSION_SECRET });
   await app.register(agentHostRoutes, { store: deps.store, voice: deps.voice, sessionSecret: env.SK_SESSION_SECRET });
 
   return app;

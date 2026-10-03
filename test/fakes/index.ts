@@ -28,18 +28,25 @@ export function fakeVoice(): VoiceClient & { calls: VoiceTokenRequest[]; fail?: 
 
 type Handler = (ev: Envelope<any>) => Promise<void>;
 
-/** Records publishes; `deliver` feeds an event to the consumer registered for a stream. */
+/**
+ * Records publishes; `deliver` feeds an event to the consumer registered for a stream.
+ * With `loopback` on, published events are also delivered to that consumer, like Redis would.
+ */
 export function fakeBus() {
   const published: { stream: StreamKey; ev: Envelope<unknown> }[] = [];
   const handlers = new Map<StreamKey, Handler>();
   const bus: Bus & {
     published: typeof published;
+    loopback: boolean;
     deliver(stream: StreamKey, ev: Envelope<unknown>): Promise<void>;
     consuming(stream: StreamKey): boolean;
   } = {
     published,
+    loopback: false,
     async publish(stream, ev) {
       published.push({ stream, ev });
+      const handler = handlers.get(stream);
+      if (bus.loopback && handler) await handler(ev);
       return `${published.length}-0`;
     },
     consume(stream, handler) {

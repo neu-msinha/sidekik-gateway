@@ -45,7 +45,7 @@ export type SetOffRecordResult = {
   session_id: string;
   off_record: boolean;
   changed: boolean;
-  deleted?: Record<CaptureTable, number>;
+  deleted?: Record<CaptureTable | 'replay_events', number>;
 };
 
 export type Log = { info(obj: object, msg: string): void; error(obj: object, msg: string): void };
@@ -130,12 +130,16 @@ export function createOffRecordController(deps: OffRecordControllerDeps) {
     const ctx = { session_id: session.id, org_id: session.org_id, cutoff_t_ms: cutoffTms };
     // A closed span over the window, so voice also drops post-call webhook turns from it.
     await deps.store.openOffRecordSpan({ session, start_t_ms: cutoffTms, end_t_ms: tMs, source: 'retroactive' });
-    const deleted = await deps.store.deleteCaptureSince(session, cutoffTms);
+    const deleteAll = async () => ({
+      ...(await deps.store.deleteCaptureSince(session, cutoffTms)),
+      // The gateway's own recording of the window, so a replay can't bring it back.
+      replay_events: await deps.store.deleteReplayEventsSince(session.id, cutoffTms),
+    });
+    const deleted = await deleteAll();
     log.info({ ...ctx, deleted }, 'retroactive off-record purge');
 
     schedule(() => {
-      deps.store
-        .deleteCaptureSince(session, cutoffTms)
+      deleteAll()
         .then((again) => log.info({ ...ctx, deleted: again }, 'retroactive off-record purge (second pass)'))
         .catch((err) => log.error({ ...ctx, err }, 'retroactive off-record purge (second pass) failed'));
     }, purgeAgainAfterMs);

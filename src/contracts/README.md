@@ -14,4 +14,4 @@ Assumptions to confirm with Sahil, because perception and the other consumers ha
 - Bus entries: `XADD <stream> MAXLEN ~ 10000 * data <JSON envelope>` (one field named `data`).
 - Envelope `type` values: `"session.lifecycle"`, `"transcript.turn"`, `"speech.signal"`, `"dom.event"`.
 
-Docs v0.2 (sidekik-docs `857c95a`): `UsageRecord.vendor` and `cost_ledger.vendor` no longer include `gemini`. Use the v0.2 list (`elevenlabs | typesafe | anthropic | recall`) when the cost ledger is added.
+Docs v0.2 (sidekik-docs `857c95a`): `UsageRecord.vendor` and `cost_ledger.vendor` no longer include `gemini`. `usage.ts` uses the v0.2 list (`elevenlabs | typesafe | anthropic | recall`).

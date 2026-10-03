@@ -1,6 +1,8 @@
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import type {
   CaptureTable,
+  CostEntry,
+  ReplayEventRow,
   NewSession,
   Person,
   Role,
@@ -246,6 +248,74 @@ export function supabaseStore(db: SupabaseClient): Store {
         'claim agent-host token',
       );
       return row?.session_id ?? null;
+    },
+
+    async insertCost(row) {
+      const { data, error } = await db
+        .from('cost_ledger')
+        .upsert(row, { onConflict: 'id', ignoreDuplicates: true })
+        .select('id');
+      if (error) throw new Error(`insert cost: ${error.message}`);
+      return (data ?? []).length > 0;
+    },
+
+    async listCosts(sessionId) {
+      const rows = unwrap(
+        await db
+          .from('cost_ledger')
+          .select('id, org_id, session_id, service, vendor, units, unit, cost_usd, counterfactual_usd, created_at')
+          .eq('session_id', sessionId)
+          .order('created_at', { ascending: true })
+          .returns<CostEntry[]>(),
+        'list costs',
+      );
+      // numeric columns can arrive as strings; normalize.
+      return (rows ?? []).map((r) => ({
+        ...r,
+        units: Number(r.units),
+        cost_usd: Number(r.cost_usd),
+        counterfactual_usd: r.counterfactual_usd === null ? null : Number(r.counterfactual_usd),
+      }));
+    },
+
+    async insertReplayEvent(row) {
+      const { data, error } = await db
+        .from('replay_events')
+        .upsert(row, { onConflict: 'id', ignoreDuplicates: true })
+        .select('id');
+      if (error) throw new Error(`insert replay event: ${error.message}`);
+      return (data ?? []).length > 0;
+    },
+
+    async listReplayEvents(sessionId) {
+      // PostgREST caps responses (1000 rows by default), so page through.
+      const PAGE = 1000;
+      const out: ReplayEventRow[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const page = unwrap(
+          await db
+            .from('replay_events')
+            .select('id, org_id, session_id, stream, t_ms, envelope')
+            .eq('session_id', sessionId)
+            .order('t_ms', { ascending: true })
+            .order('created_at', { ascending: true })
+            .range(from, from + PAGE - 1)
+            .returns<ReplayEventRow[]>(),
+          'list replay events',
+        );
+        out.push(...(page ?? []));
+        if (!page || page.length < PAGE) return out;
+      }
+    },
+
+    async deleteReplayEventsSince(sessionId, cutoffTms) {
+      const { count, error } = await db
+        .from('replay_events')
+        .delete({ count: 'exact' })
+        .eq('session_id', sessionId)
+        .gte('t_ms', cutoffTms);
+      if (error) throw new Error(`delete replay events: ${error.message}`);
+      return count ?? 0;
     },
 
     async setOffRecord(sessionId, on) {

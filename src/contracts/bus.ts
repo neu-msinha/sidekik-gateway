@@ -10,6 +10,7 @@ import { SessionLifecycleSchema } from './lifecycle.js';
 import { DomEventSchema } from './screen.js';
 import { STREAMS, type StreamKey } from './streams.js';
 import { SpeechSignalSchema, TranscriptTurnSchema } from './transcript.js';
+import { UsageRecordSchema } from './usage.js';
 
 export const DLQ_STREAM = 'sk:dlq';
 
@@ -32,6 +33,7 @@ export const STREAM_SCHEMAS: Partial<Record<StreamKey, z.ZodTypeAny>> = {
   [STREAMS.speech]: SpeechSignalSchema,
   [STREAMS.dom]: DomEventSchema,
   [STREAMS.commands]: AgentCommandSchema,
+  [STREAMS.usage]: UsageRecordSchema,
 };
 
 export type ConsumeOptions = { group?: string; batch?: number; blockMs?: number };
