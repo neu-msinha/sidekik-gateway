@@ -74,6 +74,9 @@ export interface Store {
   /** Sets sessions.ended_at if unset. Returns the session. */
   endSession(id: string): Promise<SessionRow>;
 
+  /** Moves the session to `to` only if its phase is one of `from`. Returns the row, or null if it wasn't. */
+  updatePhase(sessionId: string, from: Phase[], to: Phase): Promise<SessionRow | null>;
+
   setOffRecord(sessionId: string, on: boolean): Promise<void>;
   openOffRecordSpan(span: OffRecordSpanInput): Promise<void>;
   /** Sets end_t_ms on the session's open spans. Returns how many were closed. */

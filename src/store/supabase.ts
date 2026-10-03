@@ -169,6 +169,19 @@ export function supabaseStore(db: SupabaseClient): Store {
       return updated;
     },
 
+    async updatePhase(sessionId, from, to) {
+      return unwrap(
+        await db
+          .from('sessions')
+          .update({ phase: to })
+          .eq('id', sessionId)
+          .in('phase', from)
+          .select(SESSION_COLUMNS)
+          .maybeSingle<SessionRow>(),
+        'update phase',
+      );
+    },
+
     async setOffRecord(sessionId, on) {
       unwrap(await db.from('sessions').update({ off_record: on }).eq('id', sessionId), 'set off_record');
     },

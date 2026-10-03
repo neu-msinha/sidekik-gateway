@@ -17,6 +17,7 @@ import { sessionRoutes } from './routes/sessions.js';
 import { wsClientRoutes } from './routes/ws-client.js';
 import { createEgress } from './services/egress.js';
 import { createOffRecordController, OffRecordState } from './services/off-record.js';
+import { createPhaseService } from './services/phase.js';
 import type { Broadcaster } from './services/realtime.js';
 import type { Redactor } from './services/redact.js';
 import type { VoiceClient } from './services/voice.js';
@@ -101,11 +102,19 @@ export async function buildApp(deps: AppDeps) {
     store: deps.store,
     log: app.log.child({ component: 'egress' }),
   });
+  const phase = createPhaseService({
+    store: deps.store,
+    bus: deps.bus,
+    voice: deps.voice,
+    broadcaster: deps.broadcaster,
+    offRecord,
+  });
   const offRecordController = createOffRecordController({
     store: deps.store,
     bus: deps.bus,
     broadcaster: deps.broadcaster,
     state: offRecord,
+    onBackOnRecord: (session, log) => phase.resumeAfterOffRecord(session, log),
   });
   let stopEgress: (() => void) | undefined;
   app.addHook('onReady', async () => {
@@ -126,8 +135,10 @@ export async function buildApp(deps: AppDeps) {
     sessionSecret: env.SK_SESSION_SECRET,
     ingestUrl: env.INGEST_URL,
     offRecord: offRecordController,
+    phase,
     onEnded: async (sessionId) => {
       egress.forget(sessionId);
+      phase.forget(sessionId);
       offRecord.forget(sessionId);
       await deps.broadcaster.release(sessionId);
     },
@@ -144,6 +155,7 @@ export async function buildApp(deps: AppDeps) {
     redactor: deps.redactor,
     store: deps.store,
     offRecord: offRecordController,
+    phase,
   });
 
   return app;

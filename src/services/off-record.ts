@@ -1,5 +1,6 @@
 import type { Bus } from '../contracts/index.js';
 import type { CaptureTable, OffRecordSource, SessionRow, Store } from '../store/types.js';
+import { KeyedQueue } from './keyed-queue.js';
 import { publishLifecycle } from './lifecycle.js';
 import type { Broadcaster } from './realtime.js';
 
@@ -47,7 +48,7 @@ export type SetOffRecordResult = {
   deleted?: Record<CaptureTable, number>;
 };
 
-type Log = { info(obj: object, msg: string): void; error(obj: object, msg: string): void };
+export type Log = { info(obj: object, msg: string): void; error(obj: object, msg: string): void };
 
 export type OffRecordControllerDeps = {
   store: Store;
@@ -58,6 +59,8 @@ export type OffRecordControllerDeps = {
   /** Delay before the second retroactive purge, which catches rows owners saved late. */
   purgeAgainAfterMs?: number;
   schedule?: (fn: () => void, ms: number) => void;
+  /** Called after every switch back on the record, e.g. to deliver a held phase command. */
+  onBackOnRecord?: (session: SessionRow, log: Log) => Promise<void>;
 };
 
 /**
@@ -68,23 +71,13 @@ export function createOffRecordController(deps: OffRecordControllerDeps) {
   const now = deps.now ?? Date.now;
   const schedule = deps.schedule ?? ((fn, ms) => void setTimeout(fn, ms).unref());
   const purgeAgainAfterMs = deps.purgeAgainAfterMs ?? 5000;
-  const queues = new Map<string, Promise<unknown>>();
+  const queue = new KeyedQueue();
   // Sessions whose last state change failed to save; the next request with that state saves it.
   const unsaved = new Set<string>();
 
-  /** Runs toggles for one session one at a time, so on/off requests can't interleave. */
-  function serialized<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
-    const prev = queues.get(sessionId) ?? Promise.resolve();
-    const next = prev.catch(() => {}).then(fn);
-    queues.set(sessionId, next);
-    void next.finally(() => {
-      if (queues.get(sessionId) === next) queues.delete(sessionId);
-    });
-    return next;
-  }
-
   async function set(session: SessionRow, input: SetOffRecordInput, log: Log): Promise<SetOffRecordResult> {
-    return serialized(session.id, async () => {
+    // One toggle per session at a time, so on/off requests can't interleave.
+    return queue.run(session.id, async () => {
       const ctx = { session_id: session.id, org_id: session.org_id, source: input.source };
       const tMs = Math.max(0, now() - Date.parse(session.started_at));
       const wasOn = deps.state.has(session.id) ? deps.state.isOn(session.id) : session.off_record;
@@ -104,6 +97,9 @@ export function createOffRecordController(deps: OffRecordControllerDeps) {
 
       if (!input.on) deps.state.set(session.id, false);
       if (changed) log.info({ ...ctx, t_ms: tMs }, input.on ? 'off the record' : 'back on the record');
+      if (!input.on && deps.onBackOnRecord) {
+        await deps.onBackOnRecord(session, log).catch((err) => log.error({ ...ctx, err }, 'back-on-record hook failed'));
+      }
 
       const result: SetOffRecordResult = { session_id: session.id, off_record: input.on, changed };
       if (input.on && input.back_s) {

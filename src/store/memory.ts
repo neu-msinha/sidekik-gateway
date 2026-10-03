@@ -83,6 +83,12 @@ export function memoryStore(seed: Partial<MemoryData> = {}): Store & { data: Mem
       s.ended_at ??= new Date().toISOString();
       return { ...s };
     },
+    updatePhase: async (id, from, to) => {
+      const s = data.sessions.find((x) => x.id === id);
+      if (!s || !from.includes(s.phase)) return null;
+      s.phase = to;
+      return { ...s };
+    },
     setOffRecord: async (id, on) => {
       data.sessions.find((x) => x.id === id)!.off_record = on;
     },
