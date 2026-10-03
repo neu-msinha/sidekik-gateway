@@ -40,6 +40,40 @@ describe('request validation', () => {
   });
 });
 
+describe('JSON bodies', () => {
+  async function appWithRoutes() {
+    const app = await buildTestApp();
+    app.post('/no-body', async (req) => ({ body: req.body ?? null }));
+    app.post('/needs-body', { schema: { body: z.object({ a: z.number() }) } }, async (req) => req.body);
+    return app;
+  }
+
+  it('accepts content-type: application/json with an empty body', async () => {
+    const app = await appWithRoutes();
+    const res = await app.inject({ method: 'POST', url: '/no-body', headers: { 'content-type': 'application/json' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ body: null });
+  });
+
+  it('still validates routes that require a body', async () => {
+    const app = await appWithRoutes();
+    const res = await app.inject({ method: 'POST', url: '/needs-body', headers: { 'content-type': 'application/json' } });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects malformed JSON with the standard error shape', async () => {
+    const app = await appWithRoutes();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/no-body',
+      headers: { 'content-type': 'application/json' },
+      payload: '{nope',
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'bad_request', message: 'Body is not valid JSON' });
+  });
+});
+
 describe('CORS', () => {
   it('allows the web app origin', async () => {
     const app = await buildTestApp();

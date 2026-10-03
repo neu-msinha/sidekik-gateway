@@ -68,6 +68,18 @@ export async function buildApp(deps: AppDeps) {
     return reply.code(status).send({ error: err.code ?? 'error', message: err.message });
   });
 
+  // Browsers often send `content-type: application/json` with no body (e.g. POST /end);
+  // Fastify rejects that by default, so treat an empty JSON body as no body.
+  app.removeContentTypeParser('application/json');
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_request, body, done) => {
+    if (body === '') return done(null, undefined);
+    try {
+      done(null, JSON.parse(body as string));
+    } catch {
+      done(new HttpError(400, 'bad_request', 'Body is not valid JSON'), undefined);
+    }
+  });
+
   app.setNotFoundHandler((request, reply) =>
     reply.code(404).send({ error: 'not_found', message: `Route ${request.method} ${request.url} not found` }),
   );
