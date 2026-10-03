@@ -33,6 +33,19 @@ export type SessionRow = {
 
 export type NewSession = Omit<SessionRow, 'off_record' | 'consent_at' | 'started_at' | 'ended_at'>;
 
+export type OffRecordSource = 'ui' | 'agent' | 'chat' | 'brain' | 'retroactive';
+
+export type OffRecordSpanInput = {
+  session: SessionRow;
+  start_t_ms: number;
+  end_t_ms?: number;
+  source: OffRecordSource;
+};
+
+/** Tables purged by a retroactive off-record request (DESIGN §4). Owned by voice, perception, brain. */
+export const CAPTURE_TABLES = ['transcript_turns', 'screen_events', 'keyframes', 'questions'] as const;
+export type CaptureTable = (typeof CAPTURE_TABLES)[number];
+
 export type ConsentInput = {
   session: SessionRow;
   user_id: string;
@@ -60,4 +73,15 @@ export interface Store {
   recordConsent(input: ConsentInput): Promise<SessionRow>;
   /** Sets sessions.ended_at if unset. Returns the session. */
   endSession(id: string): Promise<SessionRow>;
+
+  setOffRecord(sessionId: string, on: boolean): Promise<void>;
+  openOffRecordSpan(span: OffRecordSpanInput): Promise<void>;
+  /** Sets end_t_ms on the session's open spans. Returns how many were closed. */
+  closeOffRecordSpans(sessionId: string, endTms: number): Promise<number>;
+  /**
+   * DOCUMENTED EXCEPTION to "write only your own tables": deletes the session's rows at or after
+   * `cutoffTms` from voice, perception and brain tables (plus keyframe images in Storage), because
+   * none of those services exposes a delete endpoint. One statement per table. Returns rows deleted.
+   */
+  deleteCaptureSince(session: SessionRow, cutoffTms: number): Promise<Record<CaptureTable, number>>;
 }

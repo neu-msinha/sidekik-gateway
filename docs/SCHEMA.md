@@ -19,7 +19,7 @@ Time on the session timeline is always `t_ms int` (milliseconds since session st
 
 ```sql
 create extension if not exists pgcrypto;
-create extension if not exists vector;
+create extension if not exists pg_trgm;    -- fuzzy matching for recall_context
 ```
 
 ## 0001_core.sql — owner: gateway (Mayukh)
@@ -102,7 +102,7 @@ create table agent_host_tokens (      -- + base
 create table cost_ledger (            -- + base
   session_id uuid references sessions(id) on delete cascade,
   service text not null,
-  vendor text not null check (vendor in ('elevenlabs','typesafe','anthropic','gemini','recall')),
+  vendor text not null check (vendor in ('elevenlabs','typesafe','anthropic','recall')),
   units numeric not null,
   unit text not null,
   cost_usd numeric(12,6) not null,
@@ -308,10 +308,33 @@ create table kb_chunks (              -- + base
   work_map_id uuid references work_maps(id) on delete cascade,
   kind text not null check (kind in ('step','guardrail','answer')),
   ref_id uuid,
-  content text not null,
-  embedding vector(768) not null
+  content text not null,             -- original language + English, concatenated
+  tsv tsvector generated always as (to_tsvector('simple', content)) stored
 );
-create index on kb_chunks using hnsw (embedding vector_cosine_ops);
+-- 'simple' config: no language stemming, so German and English text index the same way
+create index on kb_chunks using gin (tsv);
+create index on kb_chunks using gin (content gin_trgm_ops);   -- fuzzy fallback (typos, partial words)
+
+-- recall_context query (mapper): full-text first, trigram similarity as fallback
+create or replace function search_kb(p_org uuid, p_workflow uuid, p_query text, p_limit int default 5)
+returns table (id uuid, kind text, ref_id uuid, content text, score real)
+language sql stable as $$
+  with fts as (
+    select k.id, k.kind, k.ref_id, k.content,
+           ts_rank(k.tsv, websearch_to_tsquery('simple', p_query)) as score
+    from kb_chunks k
+    where k.org_id = p_org and k.workflow_id = p_workflow
+      and k.tsv @@ websearch_to_tsquery('simple', p_query)
+  ), trgm as (
+    select k.id, k.kind, k.ref_id, k.content, similarity(k.content, p_query) as score
+    from kb_chunks k
+    where k.org_id = p_org and k.workflow_id = p_workflow
+      and not exists (select 1 from fts)
+      and k.content % p_query
+  )
+  select * from fts union all select * from trgm
+  order by score desc limit p_limit;
+$$;
 
 create table expert_memory (          -- + base
   expert_id uuid not null references experts(id),
