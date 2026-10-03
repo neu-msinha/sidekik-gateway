@@ -31,8 +31,35 @@ cp .env.example .env
 
 # 3. Start the shared dev stack (Redis + Presidio) from a sidekik-platform clone
 docker compose -f ../sidekik-platform/dev/docker-compose.yml up -d
+
+# 4. Install and run
+pnpm install
+pnpm dev            # tsx watch, reads .env
 ```
 
-## Status
+| Script | What it does |
+|---|---|
+| `pnpm dev` | Run from source with reload (reads `.env`) |
+| `pnpm build` / `pnpm start` | Compile to `dist/` / run the compiled server |
+| `pnpm typecheck` | `tsc --noEmit` |
+| `pnpm test` | vitest |
 
-Not started. Tickets are built in the order listed in `docs/DESIGN.md` §10, beginning with ticket 1 (scaffold).
+The service validates every env var at boot (`src/env.ts`) and exits with a list of what is missing. `GET /healthz` returns `{ok, version, deps}`, with 503 when a dependency is down.
+
+## Roadmap
+
+One PR per ticket from `docs/DESIGN.md` §10. Each PR leaves the service booting with typecheck and tests green.
+
+| PR | Branch | Ticket | Needs |
+|---|---|---|---|
+| 1 | `feat/scaffold` | Fastify, CORS, Supabase JWT auth, internal/tool secrets, zod validation, `/healthz`, Dockerfile | — |
+| 2 | `feat/sessions` | Sessions, consent, `sk_token` minting, voice token call, lifecycle publishing | `@sidekik/contracts`, migration 0001 |
+| 3 | `feat/ws-client` | `/ws/client`: turn redaction (Presidio) and publishing | Presidio in dev stack |
+| 4 | `feat/egress` | `sk:agent.commands` consumer: off-record filter, debounce, Realtime broadcast; `pnpm dev:mock` | dev fixtures |
+| | | **Checkpoint 1 (H6):** session starts, turns redacted on the bus, `ask` reaches the page in < 200 ms | |
+| 5 | `feat/off-record` | All triggers, spans, retroactive delete | |
+| 6 | `feat/phase` | Phase API (public + internal) | |
+| 7 | `feat/proxies` | Presave, tools, workmap publish/export, meeting bot, agent-host claim | |
+| 8 | `feat/cost-ledger` | Cost ledger and `GET /v1/costs/:sid` | |
+| 9 | `feat/replay` | Replay recorder and replayer | |
+| 10 | `feat/rate-limit-logging` | Per-user rate limiting (20 req/s), structured logging | |
