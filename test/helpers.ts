@@ -1,5 +1,6 @@
 import { buildApp, type AppDeps } from '../src/app.js';
 import { loadEnv, type Env } from '../src/env.js';
+import { fakeBus, fakeVoice, memoryStore } from './fakes/index.js';
 
 export const SECRETS = {
   internal: 'i'.repeat(64),
@@ -24,6 +25,7 @@ export const RAW_ENV: Record<string, string> = {
   TUTOR_URL: 'http://localhost:8084',
   BRAIN_URL: 'http://localhost:8082',
   CORS_ORIGIN: 'https://app.sidekik.live,http://localhost:5173',
+  INGEST_URL: 'wss://ingest.sidekik.live',
 };
 
 export const testEnv = (overrides: Record<string, string> = {}): Env => loadEnv({ ...RAW_ENV, ...overrides });
@@ -36,6 +38,9 @@ export function buildTestApp(overrides: Partial<AppDeps> = {}) {
     env: testEnv(),
     verifyUser: async (jwt) => (jwt === VALID_JWT ? TEST_USER : null),
     healthChecks: {},
+    store: memoryStore(),
+    voice: fakeVoice(),
+    bus: fakeBus(),
     logger: false,
     ...overrides,
   });

@@ -8,14 +8,21 @@ import {
 } from 'fastify-type-provider-zod';
 import type { Env } from './env.js';
 import { requireSharedSecret, requireUser, type VerifyUser } from './auth.js';
+import type { Bus } from './contracts/index.js';
 import { HttpError } from './errors.js';
 import { healthRoutes, type HealthCheck } from './routes/health.js';
+import { sessionRoutes } from './routes/sessions.js';
+import type { VoiceClient } from './services/voice.js';
+import type { Store } from './store/types.js';
 import { VERSION } from './version.js';
 
 export type AppDeps = {
   env: Env;
   verifyUser: VerifyUser;
   healthChecks: Record<string, HealthCheck>;
+  store: Store;
+  voice: VoiceClient;
+  bus: Bus;
   logger?: FastifyServerOptions['logger'];
 };
 
@@ -64,6 +71,13 @@ export async function buildApp(deps: AppDeps) {
   app.decorate('requireToolSecret', requireSharedSecret('x-sidekik-tool-secret', env.SK_TOOL_SECRET));
 
   await app.register(healthRoutes, { version: VERSION, checks: deps.healthChecks });
+  await app.register(sessionRoutes, {
+    store: deps.store,
+    voice: deps.voice,
+    bus: deps.bus,
+    sessionSecret: env.SK_SESSION_SECRET,
+    ingestUrl: env.INGEST_URL,
+  });
 
   return app;
 }

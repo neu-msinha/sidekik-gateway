@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import type { FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
+import type { FastifyRequest, onRequestAsyncHookHandler } from 'fastify';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { unauthorized } from './errors.js';
 
@@ -14,11 +14,11 @@ declare module 'fastify' {
   }
   interface FastifyInstance {
     /** Supabase JWT (`Authorization: Bearer`). Sets `request.user`. */
-    requireUser: preHandlerAsyncHookHandler;
+    requireUser: onRequestAsyncHookHandler;
     /** Service-to-service calls (`X-Internal-Token`). */
-    requireInternal: preHandlerAsyncHookHandler;
+    requireInternal: onRequestAsyncHookHandler;
     /** ElevenLabs webhook tools (`X-Sidekik-Tool-Secret`). */
-    requireToolSecret: preHandlerAsyncHookHandler;
+    requireToolSecret: onRequestAsyncHookHandler;
   }
 }
 
@@ -30,7 +30,7 @@ export function supabaseVerifier(supabase: SupabaseClient): VerifyUser {
   };
 }
 
-export function requireUser(verify: VerifyUser): preHandlerAsyncHookHandler {
+export function requireUser(verify: VerifyUser): onRequestAsyncHookHandler {
   return async (request) => {
     const header = request.headers.authorization;
     const match = header?.match(/^Bearer\s+(.+)$/i);
@@ -41,8 +41,8 @@ export function requireUser(verify: VerifyUser): preHandlerAsyncHookHandler {
   };
 }
 
-/** Builds a preHandler that checks a header against a shared secret in constant time. */
-export function requireSharedSecret(header: string, expected: string): preHandlerAsyncHookHandler {
+/** Builds an onRequest hook that checks a header against a shared secret in constant time. */
+export function requireSharedSecret(header: string, expected: string): onRequestAsyncHookHandler {
   const expectedDigest = digest(expected);
   return async (request: FastifyRequest) => {
     const value = request.headers[header];
