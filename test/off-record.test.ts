@@ -162,7 +162,7 @@ describe('retroactive off-record (back_s)', () => {
   it('deletes the last back_s seconds of capture data and records a retroactive span', async () => {
     const res = await controller.set(session(), { on: true, source: 'ui', back_s: 60 }, log);
 
-    expect(res.deleted).toEqual({ transcript_turns: 2, screen_events: 1, keyframes: 1, questions: 1 });
+    expect(res.deleted).toEqual({ transcript_turns: 2, screen_events: 1, keyframes: 1, questions: 1, replay_events: 0 });
     expect(store.data.capture.transcript_turns.map((r) => r.t_ms)).toEqual([30_000]);
     expect(store.data.capture.screen_events.map((r) => r.t_ms)).toEqual([50_000]);
     expect(store.data.capture.questions).toEqual([{ session_id: 'another-session', t_ms: 100_000 }]);
@@ -192,7 +192,7 @@ describe('retroactive off-record (back_s)', () => {
     const res = await controller.set(session({ off_record: true }), { on: true, source: 'ui', back_s: 30 }, log);
     expect(res.changed).toBe(false);
     // Cutoff 90 000 ms: the keyframe at exactly 90 000 ms is inside the window.
-    expect(res.deleted).toEqual({ transcript_turns: 1, screen_events: 0, keyframes: 1, questions: 1 });
+    expect(res.deleted).toEqual({ transcript_turns: 1, screen_events: 0, keyframes: 1, questions: 1, replay_events: 0 });
   });
 
   it('clamps the window at the session start', async () => {

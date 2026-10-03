@@ -20,6 +20,8 @@ export type EgressDeps = {
   store: Pick<Store, 'getSession'>;
   log: EgressLogger;
   now?: () => number;
+  /** Called after a command reached the page; replay mode records it here. */
+  onSent?: (ev: Envelope<AgentCommand>) => Promise<unknown>;
 };
 
 /**
@@ -30,6 +32,17 @@ export function createEgress(deps: EgressDeps) {
   const now = deps.now ?? Date.now;
   const lastSpoken = new Map<string, number>();
   const handled = new RecentIds(5000);
+  const replaySessions = new Map<string, boolean>();
+
+  /** Replayed commands were already debounced when they were recorded. */
+  async function isReplay(sessionId: string): Promise<boolean> {
+    const cached = replaySessions.get(sessionId);
+    if (cached !== undefined) return cached;
+    const session = await deps.store.getSession(sessionId);
+    const replay = session?.mode === 'replay';
+    if (session) replaySessions.set(sessionId, replay);
+    return replay;
+  }
 
   /** Off-record state, read from the session row the first time this process sees the session. */
   async function isOffRecord(sessionId: string): Promise<boolean | null> {
@@ -59,7 +72,8 @@ export function createEgress(deps: EgressDeps) {
       }
     }
 
-    if (DEBOUNCED.has(cmd.type)) {
+    const debounced = DEBOUNCED.has(cmd.type) && !(await isReplay(ev.session_id));
+    if (debounced) {
       const last = lastSpoken.get(ev.session_id);
       const t = now();
       if (last !== undefined && t - last < SPOKEN_WINDOW_MS) {
@@ -71,9 +85,10 @@ export function createEgress(deps: EgressDeps) {
 
     await deps.broadcaster.send(ev.session_id, cmd);
     // Recorded only after a successful send, so a bus retry of a failed broadcast isn't debounced.
-    if (DEBOUNCED.has(cmd.type)) lastSpoken.set(ev.session_id, now());
+    if (debounced) lastSpoken.set(ev.session_id, now());
     handled.add(ev.id);
     deps.log.info({ ...ctx, latency_ms: Math.max(0, now() - Date.parse(ev.ts)) }, 'command broadcast');
+    await deps.onSent?.(ev).catch((err) => deps.log.warn({ ...ctx, err }, 'onSent hook failed'));
     return 'sent';
   }
 
@@ -82,6 +97,7 @@ export function createEgress(deps: EgressDeps) {
     /** Drops per-session state when a session ends. */
     forget(sessionId: string) {
       lastSpoken.delete(sessionId);
+      replaySessions.delete(sessionId);
     },
   };
 }

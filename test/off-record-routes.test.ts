@@ -80,7 +80,7 @@ describe('POST /v1/sessions/:id/off-record', () => {
   it('returns deletion counts for a retroactive request', async () => {
     store.data.capture.transcript_turns.push({ session_id: SID, t_ms: 80_000 }, { session_id: SID, t_ms: 10_000 });
     const res = await call({ on: true, back_s: 60 });
-    expect(res.json().deleted).toEqual({ transcript_turns: 1, screen_events: 0, keyframes: 0, questions: 0 });
+    expect(res.json().deleted).toEqual({ transcript_turns: 1, screen_events: 0, keyframes: 0, questions: 0, replay_events: 0 });
   });
 
   it('requires a user in the session org', async () => {

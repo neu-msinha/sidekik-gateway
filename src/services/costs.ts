@@ -1,20 +1,9 @@
-import { createHash } from 'node:crypto';
 import type { Envelope, UsageRecord } from '../contracts/index.js';
 import type { CostEntry, Store } from '../store/types.js';
+import { stableUuid, UUID_RE as UUID } from './ids.js';
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * A stable UUID (version 5 layout) for a bus event, used as the cost_ledger row id. The table has
- * no event-id column, so this is what makes the `sk:usage` handler idempotent across restarts.
- */
-export function eventUuid(eventId: string): string {
-  const h = createHash('sha1').update(`sidekik:cost_ledger:${eventId}`).digest();
-  h[6] = (h[6]! & 0x0f) | 0x50;
-  h[8] = (h[8]! & 0x3f) | 0x80;
-  const x = h.subarray(0, 16).toString('hex');
-  return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
-}
+/** cost_ledger row id for a bus event, so the `sk:usage` handler is idempotent across restarts. */
+export const eventUuid = (eventId: string) => stableUuid('cost_ledger', eventId);
 
 type Log = { info(obj: object, msg: string): void; warn(obj: object, msg: string): void };
 

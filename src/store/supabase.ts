@@ -2,6 +2,7 @@ import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import type {
   CaptureTable,
   CostEntry,
+  ReplayEventRow,
   NewSession,
   Person,
   Role,
@@ -275,6 +276,46 @@ export function supabaseStore(db: SupabaseClient): Store {
         cost_usd: Number(r.cost_usd),
         counterfactual_usd: r.counterfactual_usd === null ? null : Number(r.counterfactual_usd),
       }));
+    },
+
+    async insertReplayEvent(row) {
+      const { data, error } = await db
+        .from('replay_events')
+        .upsert(row, { onConflict: 'id', ignoreDuplicates: true })
+        .select('id');
+      if (error) throw new Error(`insert replay event: ${error.message}`);
+      return (data ?? []).length > 0;
+    },
+
+    async listReplayEvents(sessionId) {
+      // PostgREST caps responses (1000 rows by default), so page through.
+      const PAGE = 1000;
+      const out: ReplayEventRow[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const page = unwrap(
+          await db
+            .from('replay_events')
+            .select('id, org_id, session_id, stream, t_ms, envelope')
+            .eq('session_id', sessionId)
+            .order('t_ms', { ascending: true })
+            .order('created_at', { ascending: true })
+            .range(from, from + PAGE - 1)
+            .returns<ReplayEventRow[]>(),
+          'list replay events',
+        );
+        out.push(...(page ?? []));
+        if (!page || page.length < PAGE) return out;
+      }
+    },
+
+    async deleteReplayEventsSince(sessionId, cutoffTms) {
+      const { count, error } = await db
+        .from('replay_events')
+        .delete({ count: 'exact' })
+        .eq('session_id', sessionId)
+        .gte('t_ms', cutoffTms);
+      if (error) throw new Error(`delete replay events: ${error.message}`);
+      return count ?? 0;
     },
 
     async setOffRecord(sessionId, on) {

@@ -2,6 +2,7 @@ import {
   CAPTURE_TABLES,
   type CaptureTable,
   type CostEntry,
+  type ReplayEventRow,
   type OffRecordSource,
   type Person,
   type Role,
@@ -30,6 +31,7 @@ export type MemoryData = {
   clips: { step_id: string; storage_path: string; created_at: string }[];
   agentHostTokens: { token: string; session_id: string; expires_at: string; used_at: string | null }[];
   costs: CostEntry[];
+  replayEvents: ReplayEventRow[];
 };
 
 /** In-memory Store for tests and `pnpm dev:mock`. Not for production: nothing is persisted. */
@@ -50,6 +52,7 @@ export function memoryStore(seed: Partial<MemoryData> = {}): Store & { data: Mem
     clips: [],
     agentHostTokens: [],
     costs: [],
+    replayEvents: [],
     ...seed,
   };
   const person = (p?: Person) => (p ? { id: p.id, display_name: p.display_name } : null);
@@ -67,11 +70,11 @@ export function memoryStore(seed: Partial<MemoryData> = {}): Store & { data: Mem
       const m = data.memory.find((x) => x.expert_id === expertId && x.workflow_id === workflowId);
       return m ? { summary: m.summary, open_items: m.open_items } : null;
     },
-    insertSession: async (s) => {
+    insertSession: async ({ replay_of: _replayOf, ...s }) => {
       const row: SessionRow = {
         ...s,
         off_record: false,
-        consent_at: null,
+        consent_at: s.consent_at ?? null,
         started_at: new Date().toISOString(),
         ended_at: null,
       };
@@ -122,6 +125,18 @@ export function memoryStore(seed: Partial<MemoryData> = {}): Store & { data: Mem
     },
     listCosts: async (sessionId) =>
       data.costs.filter((c) => c.session_id === sessionId).sort((a, b) => a.created_at.localeCompare(b.created_at)),
+    insertReplayEvent: async (row) => {
+      if (data.replayEvents.some((r) => r.id === row.id)) return false;
+      data.replayEvents.push(row);
+      return true;
+    },
+    listReplayEvents: async (sessionId) =>
+      data.replayEvents.filter((r) => r.session_id === sessionId).sort((a, b) => a.t_ms - b.t_ms),
+    deleteReplayEventsSince: async (sessionId, cutoffTms) => {
+      const before = data.replayEvents.length;
+      data.replayEvents = data.replayEvents.filter((r) => !(r.session_id === sessionId && r.t_ms >= cutoffTms));
+      return before - data.replayEvents.length;
+    },
     setOffRecord: async (id, on) => {
       data.sessions.find((x) => x.id === id)!.off_record = on;
     },

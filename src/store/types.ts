@@ -1,4 +1,4 @@
-import type { Phase, SessionKind, SessionMode } from '../contracts/index.js';
+import type { Envelope, Phase, SessionKind, SessionMode } from '../contracts/index.js';
 
 export type Role = 'admin' | 'expert' | 'learner' | 'manager';
 
@@ -31,7 +31,21 @@ export type SessionRow = {
   ended_at: string | null;
 };
 
-export type NewSession = Omit<SessionRow, 'off_record' | 'consent_at' | 'started_at' | 'ended_at'>;
+export type NewSession = Omit<SessionRow, 'off_record' | 'consent_at' | 'started_at' | 'ended_at'> & {
+  /** For mode "replay": the recorded session being replayed. */
+  replay_of?: string;
+  consent_at?: string | null;
+};
+
+export type ReplayEventRow = {
+  /** Derived from the bus event id, so a redelivered event is recorded once. */
+  id: string;
+  org_id: string;
+  session_id: string;
+  stream: string;
+  t_ms: number;
+  envelope: Envelope<unknown>;
+};
 
 export type OffRecordSource = 'ui' | 'agent' | 'chat' | 'brain' | 'retroactive';
 
@@ -106,6 +120,12 @@ export interface Store {
   /** Inserts a cost_ledger row unless one with the same id exists. Returns whether it was new. */
   insertCost(row: CostRow): Promise<boolean>;
   listCosts(sessionId: string): Promise<CostEntry[]>;
+
+  /** Inserts a replay_events row unless one with the same id exists. Returns whether it was new. */
+  insertReplayEvent(row: ReplayEventRow): Promise<boolean>;
+  /** Every recorded event of a session, ordered by t_ms. */
+  listReplayEvents(sessionId: string): Promise<ReplayEventRow[]>;
+  deleteReplayEventsSince(sessionId: string, cutoffTms: number): Promise<number>;
 
   setOffRecord(sessionId: string, on: boolean): Promise<void>;
   openOffRecordSpan(span: OffRecordSpanInput): Promise<void>;
