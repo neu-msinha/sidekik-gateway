@@ -1,5 +1,23 @@
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
-import type { NewSession, Person, Role, SessionRow, Store, WorkflowRow, WorkMapRef } from './types.js';
+import type {
+  CaptureTable,
+  NewSession,
+  Person,
+  Role,
+  SessionRow,
+  Store,
+  WorkflowRow,
+  WorkMapRef,
+} from './types.js';
+
+/** The column holding the session timeline position in each capture table (SCHEMA.md). */
+const CAPTURE_T_MS: Record<CaptureTable, string> = {
+  transcript_turns: 't_ms',
+  screen_events: 't_ms',
+  keyframes: 't_ms',
+  questions: 'created_t_ms',
+};
+const CAPTURES_BUCKET = 'captures';
 
 const SESSION_COLUMNS =
   'id, org_id, workflow_id, kind, mode, phase, expert_id, learner_id, workmap_id, language, ' +
@@ -149,6 +167,63 @@ export function supabaseStore(db: SupabaseClient): Store {
       const updated = await getSession(id);
       if (!updated) throw new Error(`session ${id} disappeared`);
       return updated;
+    },
+
+    async setOffRecord(sessionId, on) {
+      unwrap(await db.from('sessions').update({ off_record: on }).eq('id', sessionId), 'set off_record');
+    },
+
+    async openOffRecordSpan({ session, start_t_ms, end_t_ms, source }) {
+      unwrap(
+        await db.from('off_record_spans').insert({
+          org_id: session.org_id,
+          session_id: session.id,
+          start_t_ms,
+          end_t_ms: end_t_ms ?? null,
+          source,
+        }),
+        'open off-record span',
+      );
+    },
+
+    async closeOffRecordSpans(sessionId, endTms) {
+      const { count, error } = await db
+        .from('off_record_spans')
+        .update({ end_t_ms: endTms }, { count: 'exact' })
+        .eq('session_id', sessionId)
+        .is('end_t_ms', null);
+      if (error) throw new Error(`close off-record spans: ${error.message}`);
+      return count ?? 0;
+    },
+
+    async deleteCaptureSince(session, cutoffTms) {
+      // Keyframe images first: once the rows are gone we no longer know their paths.
+      const frames = unwrap(
+        await db
+          .from('keyframes')
+          .select('storage_path')
+          .eq('session_id', session.id)
+          .gte('t_ms', cutoffTms)
+          .returns<{ storage_path: string }[]>(),
+        'list keyframes',
+      );
+      const paths = (frames ?? []).map((f) => f.storage_path.replace(new RegExp(`^${CAPTURES_BUCKET}/`), ''));
+      if (paths.length > 0) {
+        const { error } = await db.storage.from(CAPTURES_BUCKET).remove(paths);
+        if (error) throw new Error(`remove keyframe images: ${error.message}`);
+      }
+
+      const counts = {} as Record<CaptureTable, number>;
+      for (const [table, column] of Object.entries(CAPTURE_T_MS) as [CaptureTable, string][]) {
+        const { count, error } = await db
+          .from(table)
+          .delete({ count: 'exact' })
+          .eq('session_id', session.id)
+          .gte(column, cutoffTms);
+        if (error) throw new Error(`delete ${table}: ${error.message}`);
+        counts[table] = count ?? 0;
+      }
+      return counts;
     },
   };
 }

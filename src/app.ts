@@ -16,7 +16,7 @@ import { internalRoutes } from './routes/internal.js';
 import { sessionRoutes } from './routes/sessions.js';
 import { wsClientRoutes } from './routes/ws-client.js';
 import { createEgress } from './services/egress.js';
-import { OffRecordState } from './services/off-record.js';
+import { createOffRecordController, OffRecordState } from './services/off-record.js';
 import type { Broadcaster } from './services/realtime.js';
 import type { Redactor } from './services/redact.js';
 import type { VoiceClient } from './services/voice.js';
@@ -101,6 +101,12 @@ export async function buildApp(deps: AppDeps) {
     store: deps.store,
     log: app.log.child({ component: 'egress' }),
   });
+  const offRecordController = createOffRecordController({
+    store: deps.store,
+    bus: deps.bus,
+    broadcaster: deps.broadcaster,
+    state: offRecord,
+  });
   let stopEgress: (() => void) | undefined;
   app.addHook('onReady', async () => {
     stopEgress = deps.bus.consume<AgentCommand>(STREAMS.commands, async (ev) => {
@@ -119,6 +125,7 @@ export async function buildApp(deps: AppDeps) {
     bus: deps.bus,
     sessionSecret: env.SK_SESSION_SECRET,
     ingestUrl: env.INGEST_URL,
+    offRecord: offRecordController,
     onEnded: async (sessionId) => {
       egress.forget(sessionId);
       offRecord.forget(sessionId);
@@ -133,7 +140,11 @@ export async function buildApp(deps: AppDeps) {
     onConnect: (sessionId) => deps.broadcaster.warm(sessionId),
     sessionSecret: env.SK_SESSION_SECRET,
   });
-  await app.register(internalRoutes, { redactor: deps.redactor });
+  await app.register(internalRoutes, {
+    redactor: deps.redactor,
+    store: deps.store,
+    offRecord: offRecordController,
+  });
 
   return app;
 }

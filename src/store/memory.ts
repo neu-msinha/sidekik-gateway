@@ -1,4 +1,16 @@
-import type { Person, Role, SessionRow, Store, WorkflowRow, WorkMapRef } from './types.js';
+import {
+  CAPTURE_TABLES,
+  type CaptureTable,
+  type OffRecordSource,
+  type Person,
+  type Role,
+  type SessionRow,
+  type Store,
+  type WorkflowRow,
+  type WorkMapRef,
+} from './types.js';
+
+type CaptureRow = { session_id: string; t_ms: number; storage_path?: string };
 
 export type MemoryData = {
   workflows: WorkflowRow[];
@@ -9,6 +21,10 @@ export type MemoryData = {
   memory: { expert_id: string; workflow_id: string; summary: string; open_items: string[] }[];
   sessions: SessionRow[];
   consents: { session_id: string; user_id: string; text_version: string; scopes: string[] }[];
+  spans: { session_id: string; start_t_ms: number; end_t_ms: number | null; source: OffRecordSource }[];
+  capture: Record<CaptureTable, CaptureRow[]>;
+  /** Storage paths removed by deleteCaptureSince. */
+  removedObjects: string[];
 };
 
 /** In-memory Store for tests and `pnpm dev:mock`. Not for production: nothing is persisted. */
@@ -22,6 +38,9 @@ export function memoryStore(seed: Partial<MemoryData> = {}): Store & { data: Mem
     memory: [],
     sessions: [],
     consents: [],
+    spans: [],
+    capture: { transcript_turns: [], screen_events: [], keyframes: [], questions: [] },
+    removedObjects: [],
     ...seed,
   };
   const person = (p?: Person) => (p ? { id: p.id, display_name: p.display_name } : null);
@@ -63,6 +82,28 @@ export function memoryStore(seed: Partial<MemoryData> = {}): Store & { data: Mem
       const s = data.sessions.find((x) => x.id === id)!;
       s.ended_at ??= new Date().toISOString();
       return { ...s };
+    },
+    setOffRecord: async (id, on) => {
+      data.sessions.find((x) => x.id === id)!.off_record = on;
+    },
+    openOffRecordSpan: async ({ session, start_t_ms, end_t_ms, source }) => {
+      data.spans.push({ session_id: session.id, start_t_ms, end_t_ms: end_t_ms ?? null, source });
+    },
+    closeOffRecordSpans: async (id, endTms) => {
+      const open = data.spans.filter((x) => x.session_id === id && x.end_t_ms === null);
+      for (const span of open) span.end_t_ms = endTms;
+      return open.length;
+    },
+    deleteCaptureSince: async (session, cutoffTms) => {
+      const counts = {} as Record<CaptureTable, number>;
+      for (const table of CAPTURE_TABLES) {
+        const doomed = (r: CaptureRow) => r.session_id === session.id && r.t_ms >= cutoffTms;
+        const rows = data.capture[table];
+        data.removedObjects.push(...rows.filter(doomed).flatMap((r) => (r.storage_path ? [r.storage_path] : [])));
+        counts[table] = rows.filter(doomed).length;
+        data.capture[table] = rows.filter((r) => !doomed(r));
+      }
+      return counts;
     },
   };
 }

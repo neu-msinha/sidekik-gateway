@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { signSessionToken, type Bus } from '../contracts/index.js';
 import { forbidden, HttpError, notFound } from '../errors.js';
 import { publishLifecycle } from '../services/lifecycle.js';
+import { offRecordBody } from './off-record-body.js';
+import type { OffRecordController } from '../services/off-record.js';
 import type { VoiceClient, VoiceTokenRequest } from '../services/voice.js';
 import type { NewSession, Role, SessionRow, Store } from '../store/types.js';
 
@@ -14,6 +16,7 @@ export type SessionRoutesOptions = {
   sessionSecret: string;
   /** Public perception base URL, e.g. wss://ingest.sidekik.live */
   ingestUrl: string;
+  offRecord: OffRecordController;
   /** Releases per-session resources (Realtime channel, debounce and off-record state). */
   onEnded?: (sessionId: string) => Promise<void>;
 };
@@ -160,6 +163,7 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
       if (session.ended_at) return { session_id: session.id, ended_at: session.ended_at };
 
       const ended = await store.endSession(session.id);
+      await store.closeOffRecordSpans(ended.id, Math.max(0, Date.now() - Date.parse(ended.started_at)));
       await publishLifecycle(bus, ended, 'ended');
       await opts.onEnded?.(ended.id).catch((err) =>
         request.log.warn({ err, session_id: ended.id, org_id: ended.org_id }, 'session cleanup failed'),
@@ -167,6 +171,20 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
       // TODO(proxies): remove the meeting bot via meetbot DELETE /internal/bots/:sid when mode is "meeting".
       request.log.info({ session_id: ended.id, org_id: ended.org_id }, 'session ended');
       return { session_id: ended.id, ended_at: ended.ended_at };
+    },
+  );
+
+  // UI toggle and the agent's mark_off_record client tool (DESIGN §4).
+  app.post(
+    '/v1/sessions/:id/off-record',
+    {
+      onRequest: app.requireUser,
+      schema: { params: SessionParams, body: offRecordBody(['ui', 'agent', 'chat'], 'ui') },
+    },
+    async (request) => {
+      const session = await sessionForUser(request.params.id, request.user!.id);
+      if (session.ended_at) throw new HttpError(409, 'session_ended', 'Session has ended');
+      return opts.offRecord.set(session, request.body, request.log);
     },
   );
 };
