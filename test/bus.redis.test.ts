@@ -65,7 +65,7 @@ describe.skipIf(!url)('bus (Redis)', () => {
     }, { group: `test-${randomUUID()}` });
     await vi.waitFor(async () => expect(await bus.redis.exists(stream)).toBe(1));
 
-    await bus.redis.xadd(stream, '*', 'data', 'not json');
+    await bus.redis.xadd(stream, '*', 'ev', 'not json');
     await bus.publish(stream, { ...ask('ok'), data: { type: 'ask' } } as Envelope<unknown>);
     await bus.publish(stream, ask('valid'));
 
