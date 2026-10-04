@@ -7,11 +7,26 @@ export const BUDGET_MS = { presave: 250, tool: 800, mapper: 1000, export: 5000, 
 
 export type TutorTool = 'check_guardrails' | 'get_step' | 'get_expert_moment';
 
+// Mirrors PresaveResponseSchema in @sidekik/contracts v0.3.0; import it from there once the pin moves past
+// v0.1.0. Every field is relayed to the page: `field` is the one the MiniERP highlights.
 const PresaveSchema = z.object({
   allow: z.boolean(),
   guardrail_id: z.string().optional(),
+  guardrail_key: z.string().optional(),
   quote: z.string().optional(),
   step_id: z.string().optional(),
+  field: z.string().optional(),
+  violations: z
+    .array(
+      z.object({
+        guardrail_id: z.string(),
+        key: z.string(),
+        description: z.string(),
+        blocking: z.boolean(),
+        step_id: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 export type PresaveResult = z.infer<typeof PresaveSchema>;
 

@@ -49,6 +49,23 @@ describe('httpTutorClient', () => {
     ]);
   });
 
+  it('relays every presave field, including the one to highlight', async () => {
+    const verdict = {
+      allow: false,
+      guardrail_id: 'g1',
+      guardrail_key: 'G1',
+      quote: 'Equipment over €5,000 is always capex.',
+      step_id: 's4',
+      field: 'cost_center',
+      violations: [
+        { guardrail_id: 'g1', key: 'G1', description: 'Equipment over €5,000 is capex', blocking: true, step_id: 's4' },
+        { guardrail_id: 'g3', key: 'G3', description: 'Unknown supplier: ask the controller', blocking: false },
+      ],
+    };
+    const { url } = await upstream(() => json(verdict));
+    expect(await httpTutorClient(url, TOKEN).presave('sid', { net_amount: 7200 })).toEqual(verdict);
+  });
+
   it('times out presave after 250 ms', async () => {
     server = createServer(() => {});
     await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));

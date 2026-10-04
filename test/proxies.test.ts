@@ -84,7 +84,7 @@ const g1State = { invoice_id: '4510', net_amount: 7200, category: 'equipment', c
 
 describe('POST /v1/sessions/:id/presave', () => {
   it('asks tutor for a tutor session and returns its verdict', async () => {
-    tutor.presaveResult = { allow: false, guardrail_id: 'G1', quote: 'Equipment over €5,000 is always capex.', step_id: 'S4' };
+    tutor.presaveResult = { allow: false, guardrail_id: 'G1', quote: 'Equipment over €5,000 is always capex.', step_id: 'S4', field: 'cost_center' };
     const res = await call('POST', `/v1/sessions/${TUTOR}/presave`, user, { state: g1State });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual(tutor.presaveResult);
