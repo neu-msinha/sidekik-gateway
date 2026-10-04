@@ -11,7 +11,7 @@
 Assumptions to confirm with Sahil, because perception and the other consumers have to match:
 
 - `sk_token`: HS256 JWT with claims `{sid, org, role, kind}`, `exp` 2 h after `iat`, no `iss`/`aud`.
-- Bus entries: `XADD <stream> MAXLEN ~ 10000 * data <JSON envelope>` (one field named `data`).
+- Bus entries: `XADD <stream> MAXLEN ~ 10000 * ev <JSON envelope>` (one field named `ev`, as in sidekik-platform `src/bus.ts`).
 - Envelope `type` values: `"session.lifecycle"`, `"transcript.turn"`, `"speech.signal"`, `"dom.event"`.
 
 Docs v0.2 (sidekik-docs `857c95a`): `UsageRecord.vendor` and `cost_ledger.vendor` no longer include `gemini`. `usage.ts` uses the v0.2 list (`elevenlabs | typesafe | anthropic | recall`).
