@@ -143,7 +143,7 @@ app = await buildApp({
       const g1 = (state.net_amount ?? 0) > 5000 && state.category === 'equipment' && state.cost_center !== '0400';
       app.log.info({ session_id: sessionId, state, allow: !g1 }, 'mock tutor presave');
       return g1
-        ? { allow: false, guardrail_id: 'G1', quote: 'Equipment over €5,000 is always capex.', step_id: 'S4' }
+        ? { allow: false, guardrail_id: 'G1', quote: 'Equipment over €5,000 is always capex.', step_id: 'S4', field: 'cost_center' }
         : { allow: true };
     },
     async tool(name, body) {
