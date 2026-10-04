@@ -35,7 +35,7 @@ The gateway is the **only public API** and the **only path from backend to brows
 | GET | `/v1/workmaps/:id/steps/:step/clip` | → `{url}` | Signed URL, 10 min |
 | GET | `/v1/costs/:sid` | → ledger + counterfactual | |
 | POST | `/v1/replay/:sid` | `{speed}` | Re-publishes `replay_events` |
-| POST | `/v1/agent-host/claim` | `{t}` (no JWT) → `{sk_token, el}` | One-time token; marks it used |
+| POST | `/v1/agent-host/claim` | `{t}` (no JWT) → `{sk_token, el}` | One-time token; marks it used. The `sk_token` carries the session's own role (`expert` for capture, `learner` for tutor): `SessionRole` has no agent-host role. |
 | POST | `/v1/tools/recall_context` | (ElevenLabs tool, `X-Sidekik-Tool-Secret`) | → mapper |
 | POST | `/v1/tools/check_guardrails`, `/get_step`, `/get_expert_moment` | (ElevenLabs tool) | → tutor |
 | WS | `/ws/client/:sid?t=sk_token` | in: `turn`, `speech`, `dom`, `agent_event` | §3 |
@@ -75,7 +75,7 @@ The gateway is the **only public API** and the **only path from backend to brows
 
 - `POST /internal/sessions/:id/phase`
 - `POST /internal/sessions/:id/off-record`
-- `POST /internal/redact {text}` → `{text}` (used by voice for webhook turns)
+- `POST /internal/redact {text, lang?, keep?}` → `{text}` (used by voice for webhook turns). Fails closed: **503 `redaction_unavailable`** when Presidio fails; the caller must not keep or forward the text.
 - `POST /internal/agent-host-token {sid}` → `{t}`
 
 All of these require `X-Internal-Token`.
