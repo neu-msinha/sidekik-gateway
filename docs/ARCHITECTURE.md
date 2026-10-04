@@ -1,4 +1,4 @@
-# Sidekik: System Architecture (v0.3)
+# Sidekik: System Architecture (v0.3.3)
 
 > **Sidekik** is an AI apprentice. It watches an expert work on their screen and asks why at the right moments. It turns that session into a Work Map, then coaches the next hire through the same work on their own screen.
 > Hack-Nation 7th Global AI Hackathon, Challenge 01 (ElevenLabs) · Domain: **sidekik.live** (Cloudflare) · Team: **Sahil, Aadil, Mayukh**
@@ -139,7 +139,7 @@ Nine repos for three people in 24 hours means integration is the main risk, more
 | `sk:speech.signals` | gateway, meetbot | brain, tutor | `SpeechSignal` |
 | `sk:dom.events` | gateway | perception | `DomEvent` |
 | `sk:screen.events` | perception | brain, tutor, mapper, gateway (replay) | `ScreenEvent` |
-| `sk:agent.commands` | perception (`ctx`), brain (`ask`), mapper (`followup`, `teachback`), tutor (`predict`, `intervene`, `replay`, `summary`) | gateway | `AgentCommand` |
+| `sk:agent.commands` | perception (`ctx`), brain (`ask`), mapper (`followup`, `teachback`), tutor (`predict`, `intervene`, `replay`, `summary`) | gateway; perception (reads `ask` to keep keyframes around each question) | `AgentCommand` |
 | `sk:workmap.published` | mapper | voice, tutor | `WorkMapPublished` |
 | `sk:usage` | every service | gateway (cost ledger) | `UsageRecord` |
 
