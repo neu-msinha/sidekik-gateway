@@ -185,7 +185,7 @@ describe('Work Map proxies', () => {
   it('returns a 10-minute signed URL for the newest clip of a step', async () => {
     const res = await call('GET', `/v1/workmaps/${IDS.workmap}/steps/${STEP}/clip`);
     expect(res.json()).toEqual({
-      url: 'memory://captures/captures/org/o/sessions/s/clips/new.mp4?ttl=600',
+      url: 'memory://captures/org/o/sessions/s/clips/new.mp4?ttl=600',
       expires_in: 600,
     });
   });

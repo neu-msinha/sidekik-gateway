@@ -95,7 +95,9 @@ export const proxyRoutes: FastifyPluginAsyncZod<ProxyRoutesOptions> = async (app
       const { workmap } = await workmapForUser(store, request, request.params.id);
       const path = await store.getStepClipPath(workmap.id, request.params.step);
       if (!path) throw notFound('No clip for this step');
-      return { url: await store.signStorageUrl('captures', path, CLIP_TTL_S), expires_in: CLIP_TTL_S };
+      // Perception stores clips.storage_path with the bucket in front ("captures/org/…").
+      const key = path.replace(/^captures\//, '');
+      return { url: await store.signStorageUrl('captures', key, CLIP_TTL_S), expires_in: CLIP_TTL_S };
     },
   );
 
