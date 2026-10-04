@@ -22,7 +22,7 @@
     "@fastify/cors": "^11",
     "@fastify/rate-limit": "^10",
     "@fastify/websocket": "^11",
-    "@sidekik/contracts": "github:sidekik-live/sidekik-platform#v0.1.0",
+    "@sidekik/contracts": "github:sidekik-live/sidekik-platform#v0.3.0",
     "@supabase/supabase-js": "^2",
     "fastify": "^5",
     "fastify-type-provider-zod": "^7.0.0",

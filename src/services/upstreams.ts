@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { InvoiceState } from '../contracts/index.js';
+import { InternalPresaveResponseSchema, type InvoiceState } from '../contracts/index.js';
 import { internalClient } from './internal-http.js';
 
 // Budgets from ARCHITECTURE §4.3. Presave gets 250 ms so the gateway answers inside the page's 300 ms.
@@ -7,27 +7,8 @@ export const BUDGET_MS = { presave: 250, tool: 800, mapper: 1000, export: 5000, 
 
 export type TutorTool = 'check_guardrails' | 'get_step' | 'get_expert_moment';
 
-// Mirrors PresaveResponseSchema in @sidekik/contracts v0.3.0; import it from there once the pin moves past
-// v0.1.0. Every field is relayed to the page: `field` is the one the MiniERP highlights.
-const PresaveSchema = z.object({
-  allow: z.boolean(),
-  guardrail_id: z.string().optional(),
-  guardrail_key: z.string().optional(),
-  quote: z.string().optional(),
-  step_id: z.string().optional(),
-  field: z.string().optional(),
-  violations: z
-    .array(
-      z.object({
-        guardrail_id: z.string(),
-        key: z.string(),
-        description: z.string(),
-        blocking: z.boolean(),
-        step_id: z.string().optional(),
-      }),
-    )
-    .optional(),
-});
+// The whole answer is relayed to the page: `field` is the one the MiniERP highlights.
+const PresaveSchema = InternalPresaveResponseSchema;
 export type PresaveResult = z.infer<typeof PresaveSchema>;
 
 /** Tool responses are relayed to ElevenLabs as-is; only require a JSON object. */
