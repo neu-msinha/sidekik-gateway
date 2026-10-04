@@ -18,8 +18,8 @@ importers:
         specifier: ^11
         version: 11.3.3
       '@sidekik/contracts':
-        specifier: github:sidekik-live/sidekik-platform#v0.1.0
-        version: https://codeload.github.com/sidekik-live/sidekik-platform/tar.gz/580ca72422a93c67f99676531ddf11062deaa01d
+        specifier: github:sidekik-live/sidekik-platform#v0.3.0
+        version: https://codeload.github.com/sidekik-live/sidekik-platform/tar.gz/d4ed304e05b9a9bc1f9b37433918297f7820e4ee
       '@supabase/supabase-js':
         specifier: ^2
         version: 2.117.2
@@ -407,9 +407,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@sidekik/contracts@https://codeload.github.com/sidekik-live/sidekik-platform/tar.gz/580ca72422a93c67f99676531ddf11062deaa01d':
-    resolution: {gitHosted: true, integrity: sha512-M9hEDiTjETEFqe+H6VBOi0jxNev6FSqy51Lh69dSlBhG9i2ZPr3RMYXk4fz3GPebu0dV+4U3j7JWPURJCX5Z4A==, tarball: https://codeload.github.com/sidekik-live/sidekik-platform/tar.gz/580ca72422a93c67f99676531ddf11062deaa01d}
-    version: 0.1.0
+  '@sidekik/contracts@https://codeload.github.com/sidekik-live/sidekik-platform/tar.gz/d4ed304e05b9a9bc1f9b37433918297f7820e4ee':
+    resolution: {gitHosted: true, integrity: sha512-Gt+yh1tOy8hK//q/r8lgH2rAmOCDCPbLR/KdG6DgyXh7vphvGQw6oeAXjduvaysbQPHf0X588T/uzIRJYc7d4Q==, tarball: https://codeload.github.com/sidekik-live/sidekik-platform/tar.gz/d4ed304e05b9a9bc1f9b37433918297f7820e4ee}
+    version: 0.3.0
     engines: {node: '>=20'}
 
   '@supabase/auth-js@2.117.2':
@@ -1214,7 +1214,7 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.64.0':
     optional: true
 
-  '@sidekik/contracts@https://codeload.github.com/sidekik-live/sidekik-platform/tar.gz/580ca72422a93c67f99676531ddf11062deaa01d':
+  '@sidekik/contracts@https://codeload.github.com/sidekik-live/sidekik-platform/tar.gz/d4ed304e05b9a9bc1f9b37433918297f7820e4ee':
     dependencies:
       ioredis: 6.0.0
       pino: 10.4.0
