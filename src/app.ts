@@ -17,6 +17,7 @@ import { rateLimitOptions } from './rate-limit.js';
 import { healthRoutes, type HealthCheck } from './routes/health.js';
 import { agentHostRoutes } from './routes/agent-host.js';
 import { costRoutes } from './routes/costs.js';
+import { peopleRoutes } from './routes/people.js';
 import { replayRoutes } from './routes/replay.js';
 import { internalRoutes } from './routes/internal.js';
 import { proxyRoutes, toolRoutes } from './routes/proxies.js';
@@ -233,6 +234,7 @@ export async function buildApp(deps: AppDeps) {
   await app.register(proxyRoutes, { store: deps.store, tutor: deps.tutor, mapper: deps.mapper, meetbot: deps.meetbot });
   await app.register(toolRoutes, { tutor: deps.tutor, mapper: deps.mapper });
   await app.register(costRoutes, { store: deps.store });
+  await app.register(peopleRoutes, { store: deps.store });
   await app.register(replayRoutes, { store: deps.store, replay, sessionSecret: env.SK_SESSION_SECRET });
   await app.register(agentHostRoutes, { store: deps.store, voice: deps.voice, sessionSecret: env.SK_SESSION_SECRET });
 

@@ -4,6 +4,18 @@ export type Role = 'admin' | 'expert' | 'learner' | 'manager';
 
 export type Person = { id: string; display_name: string };
 
+export type RoleAssignment = {
+  org_id: string;
+  email: string;
+  role: Role;
+  /** Used only when an expert/learner profile has to be created. */
+  display_name: string;
+  language: string;
+};
+
+/** `person_id` is the experts/learners row; null for admins and managers, who have none. */
+export type AssignedRole = { user_id: string; person_id: string | null };
+
 export type WorkflowRow = {
   id: string;
   org_id: string;
@@ -93,6 +105,11 @@ export interface Store {
   getRole(orgId: string, userId: string): Promise<Role | null>;
   findExpertByUser(orgId: string, userId: string): Promise<Person | null>;
   findLearnerByUser(orgId: string, userId: string): Promise<Person | null>;
+  /**
+   * Gives an existing account a role in the org (upserts org_members) and, for experts and learners,
+   * makes sure they have a profile row. Throws `UserNotFoundError` when no account has that email.
+   */
+  assignRole(input: RoleAssignment): Promise<AssignedRole>;
   getExpert(id: string): Promise<Person | null>;
   getLearner(id: string): Promise<Person | null>;
   getWorkMap(id: string): Promise<WorkMapRef | null>;
@@ -140,4 +157,11 @@ export interface Store {
    * none of those services exposes a delete endpoint. One statement per table. Returns rows deleted.
    */
   deleteCaptureSince(session: SessionRow, cutoffTms: number): Promise<Record<CaptureTable, number>>;
+}
+
+export class UserNotFoundError extends Error {
+  constructor(email: string) {
+    super(`No account with ${email}. Create it in Supabase (Authentication > Users) first.`);
+    this.name = 'UserNotFoundError';
+  }
 }

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   CAPTURE_TABLES,
   type CaptureTable,
@@ -10,11 +11,14 @@ import {
   type Store,
   type WorkflowRow,
   type WorkMapRef,
+  UserNotFoundError,
 } from './types.js';
 
 type CaptureRow = { session_id: string; t_ms: number; storage_path?: string };
 
 export type MemoryData = {
+  /** Stands in for auth.users. */
+  users: { id: string; email: string }[];
   workflows: WorkflowRow[];
   members: { org_id: string; user_id: string; role: Role }[];
   experts: (Person & { org_id: string; user_id: string | null })[];
@@ -37,6 +41,7 @@ export type MemoryData = {
 /** In-memory Store for tests and `pnpm dev:mock`. Not for production: nothing is persisted. */
 export function memoryStore(seed: Partial<MemoryData> = {}): Store & { data: MemoryData } {
   const data: MemoryData = {
+    users: [],
     workflows: [],
     members: [],
     experts: [],
@@ -67,6 +72,21 @@ export function memoryStore(seed: Partial<MemoryData> = {}): Store & { data: Mem
     getRole: async (org, user) => data.members.find((m) => m.org_id === org && m.user_id === user)?.role ?? null,
     findExpertByUser: async (org, user) => person(data.experts.find((e) => e.org_id === org && e.user_id === user)),
     findLearnerByUser: async (org, user) => person(data.learners.find((l) => l.org_id === org && l.user_id === user)),
+    assignRole: async (input) => {
+      const user = data.users.find((u) => u.email.toLowerCase() === input.email.toLowerCase());
+      if (!user) throw new UserNotFoundError(input.email);
+      const member = data.members.find((m) => m.org_id === input.org_id && m.user_id === user.id);
+      if (member) member.role = input.role;
+      else data.members.push({ org_id: input.org_id, user_id: user.id, role: input.role });
+      const profiles = input.role === 'expert' ? data.experts : input.role === 'learner' ? data.learners : null;
+      if (!profiles) return { user_id: user.id, person_id: null };
+      let profile = profiles.find((p) => p.org_id === input.org_id && p.user_id === user.id);
+      if (!profile) {
+        profile = { id: randomUUID(), org_id: input.org_id, user_id: user.id, display_name: input.display_name };
+        profiles.push(profile);
+      }
+      return { user_id: user.id, person_id: profile.id };
+    },
     getExpert: async (id) => person(data.experts.find((e) => e.id === id)),
     getLearner: async (id) => person(data.learners.find((l) => l.id === id)),
     getWorkMap: async (id) => data.workmaps.find((w) => w.id === id) ?? null,
