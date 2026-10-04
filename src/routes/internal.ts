@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { RedactRequestSchema } from '../contracts/index.js';
 import { HttpError, notFound } from '../errors.js';
 import { annotate } from '../logging.js';
 import type { OffRecordController } from '../services/off-record.js';
@@ -19,20 +20,29 @@ export type InternalRoutesOptions = {
 export const internalRoutes: FastifyPluginAsyncZod<InternalRoutesOptions> = async (app, opts) => {
   app.addHook('onRequest', app.requireInternal);
 
-  // Used by voice for post-call webhook turns, which arrive unredacted.
+  // Used by voice for post-call webhook turns, which arrive unredacted. Fails closed: when
+  // Presidio is down the caller gets 503 and must not keep or forward the text.
   app.post(
     '/internal/redact',
     {
       schema: {
-        body: z.object({ text: z.string().max(20_000), language: z.string().min(2).max(10).default('en') }),
+        // RedactRequestSchema (sidekik-platform api.ts); `language` is the field's old name, still accepted.
+        body: RedactRequestSchema.extend({
+          text: z.string().max(20_000),
+          keep: z.array(z.string()).max(20).optional(),
+          language: z.string().min(2).max(10).optional(),
+        }),
       },
     },
     async (request) => {
-      const result = await opts.redactor.redact(request.body.text, request.body.language);
-      if (result.engine === 'fallback') {
-        request.log.warn({ err: result.error }, 'presidio unavailable; text redacted with fallback patterns');
+      const { text, lang, language, keep } = request.body;
+      try {
+        const result = await opts.redactor.redact(text, lang ?? language ?? 'en', keep);
+        return { text: result.text };
+      } catch (err) {
+        request.log.error({ err: err instanceof Error ? err.message : String(err) }, 'redaction failed');
+        throw new HttpError(503, 'redaction_unavailable', 'Presidio is unavailable; the text was not redacted');
       }
-      return { text: result.text };
     },
   );
 
@@ -61,7 +71,7 @@ export const internalRoutes: FastifyPluginAsyncZod<InternalRoutesOptions> = asyn
       schema: {
         params: z.object({ id: z.string().uuid() }),
         body: z.discriminatedUnion('phase', [
-          z.object({ phase: z.literal('debrief'), dynamic_variables: z.record(z.string()).default({}) }),
+          z.object({ phase: z.literal('debrief'), dynamic_variables: z.record(z.string(), z.string()).default({}) }),
           z.object({ phase: z.literal('confirmed') }),
         ]),
       },

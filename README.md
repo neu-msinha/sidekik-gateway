@@ -7,7 +7,7 @@ The public API for **Sidekik**, an AI apprentice ([sidekik.live](https://sidekik
 ## What it does
 
 - **Tenancy and sessions:** orgs, members, workflows, sessions, phases, and `sk_token` minting.
-- **Trust:** consent, off-record state (the single source of truth), and Presidio PII redaction of transcript turns before they reach the bus.
+- **Trust:** consent, off-record state (the single source of truth), and Presidio PII redaction of transcript turns before they reach the bus. Redaction fails closed (a turn Presidio can't redact is dropped, `/internal/redact` answers 503) and keeps the supplier of the record on screen.
 - **Egress:** consumes `sk:agent.commands`, filters by off-record state, debounces spoken commands, and broadcasts them to Supabase Realtime `session:{sid}`.
 - **Glue:** proxies ElevenLabs webhook tools, the MiniERP pre-save check, Work Map publish/export, and meeting-bot requests.
 - **Ops:** the cost ledger (`sk:usage`) and replay mode (`POST /v1/replay/:sid`).
@@ -16,7 +16,9 @@ The full spec is in `docs/DESIGN.md`. System design and contracts are in `docs/A
 
 ## Stack
 
-Node 20, TypeScript (strict), Fastify, zod, pino, vitest, pnpm, and Docker (`node:20-slim`). Contracts come from `@sidekik/contracts`, pinned to a `sidekik-platform` git tag.
+Node 22, TypeScript (strict), Fastify, zod 4, pino 10, vitest, pnpm 10, and Docker (`node:22-slim`). Payload types, stream names, the Redis Streams bus, `sk_token` helpers and Presidio redaction come from `@sidekik/contracts`, pinned to the `sidekik-platform` tag `v0.1.0` (`src/contracts/index.ts` re-exports it).
+
+Use pnpm 10 (`packageManager` pins 10.34.6; with corepack or pnpm ≥ 9.7 it switches automatically). pnpm 9 installs the git dependency under a directory name containing `#`, which Vite (and so vitest) cannot load.
 
 ## Setup
 

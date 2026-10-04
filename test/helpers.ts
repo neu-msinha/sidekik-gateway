@@ -45,7 +45,7 @@ export function buildTestApp(overrides: Partial<AppDeps> = {}) {
     meetbot: fakeMeetbot(),
     bus: fakeBus(),
     broadcaster: fakeBroadcaster(),
-    redactor: { redact: async (text) => ({ text, engine: 'presidio', entities: [] }) },
+    redactor: { redact: async (text) => ({ text, entities: [] }) },
     logger: false,
     ...overrides,
   });

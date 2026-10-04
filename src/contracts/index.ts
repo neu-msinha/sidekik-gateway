@@ -1,11 +1,3 @@
-// TEMPORARY: becomes `export * from '@sidekik/contracts';` once v0.1.0 is tagged (see ./README.md).
-export * from './envelope.js';
-export * from './lifecycle.js';
-export * from './streams.js';
-export * from './bus.js';
-export * from './auth.js';
-export * from './transcript.js';
-export * from './screen.js';
-export * from './commands.js';
-export * from './usage.js';
-export * from './workmap.js';
+// Every payload type, stream name, the bus and sk_token helpers come from sidekik-platform (pinned
+// tag in package.json). The rest of the service imports contracts only through this file.
+export * from '@sidekik/contracts';

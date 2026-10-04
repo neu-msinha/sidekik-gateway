@@ -64,7 +64,7 @@ describe('egress wiring', () => {
     const { broadcaster, app } = setup();
     const a = await app;
     await a.ready();
-    const t = await signSessionToken({ sid: SID, org: IDS.org, role: 'expert', kind: 'capture' }, SECRETS.session);
+    const t = signSessionToken({ sid: SID, org: IDS.org, role: 'expert', kind: 'capture' }, SECRETS.session);
     const ws = await a.injectWS(`/ws/client/${SID}?t=${t}`);
     expect(broadcaster.warmed).toEqual([SID]);
     ws.terminate();

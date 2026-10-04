@@ -258,10 +258,12 @@ export function supabaseStore(db: SupabaseClient): Store {
     },
 
     async insertCost(row) {
-      const { data, error } = await db
-        .from('cost_ledger')
-        .upsert(row, { onConflict: 'id', ignoreDuplicates: true })
-        .select('id');
+      const upsert = (r: typeof row) =>
+        db.from('cost_ledger').upsert(r, { onConflict: 'id', ignoreDuplicates: true }).select('id');
+      let { data, error } = await upsert(row);
+      // 23503: session_id names no sessions row (a fixture replayed onto the bus, a publish without a
+      // session). Record the cost against the org rather than retrying it into the dead-letter stream.
+      if (error?.code === '23503' && row.session_id) ({ data, error } = await upsert({ ...row, session_id: null }));
       if (error) throw new Error(`insert cost: ${error.message}`);
       return (data ?? []).length > 0;
     },

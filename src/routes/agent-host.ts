@@ -55,8 +55,9 @@ export const agentHostRoutes: FastifyPluginAsyncZod<AgentHostOptions> = async (a
 
       const tokenReq = await voiceRequestFor(store, session);
       const el = await opts.voice.getToken(tokenReq);
-      const sk_token = await signSessionToken(
-        { sid: session.id, org: session.org_id, role: 'agent_host', kind: session.kind },
+      // The page acts for the session's person: the expert in a capture, the learner in a tutor session.
+      const sk_token = signSessionToken(
+        { sid: session.id, org: session.org_id, role: session.kind === 'capture' ? 'expert' : 'learner', kind: session.kind },
         opts.sessionSecret,
       );
       request.log.info({ phase: session.phase }, 'agent host claimed');

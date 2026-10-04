@@ -128,7 +128,7 @@ describe('off the record, end to end', () => {
 
   it('sends no command or event after offrecord_on until it is switched off', async () => {
     const a = await app();
-    const t = await signSessionToken({ sid: SID, org: IDS.org, role: 'expert', kind: 'capture' }, SECRETS.session);
+    const t = signSessionToken({ sid: SID, org: IDS.org, role: 'expert', kind: 'capture' }, SECRETS.session);
     const ws = await a.injectWS(`/ws/client/${SID}?t=${t}`);
 
     await bus.deliver(STREAMS.commands, command({ type: 'ctx', text: 'before' }));

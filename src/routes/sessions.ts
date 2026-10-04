@@ -84,7 +84,7 @@ export const sessionRoutes: FastifyPluginAsyncZod<SessionRoutesOptions> = async 
       const el = await voice.getToken(tokenReq);
       const session = await store.insertSession({ ...row, el_agent_id: el.agent_id });
       annotate(request, { session_id: session.id, org_id: session.org_id });
-      const sk_token = await signSessionToken(
+      const sk_token = signSessionToken(
         { sid: session.id, org: session.org_id, role, kind },
         opts.sessionSecret,
       );

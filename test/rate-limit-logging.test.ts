@@ -130,7 +130,7 @@ describe('structured request logging', () => {
 
   it('never logs tokens from query strings', async () => {
     const { app, raw } = await appWithLogs();
-    const t = await signSessionToken({ sid: SID, org: IDS.org, role: 'expert', kind: 'capture' }, SECRETS.session);
+    const t = signSessionToken({ sid: SID, org: IDS.org, role: 'expert', kind: 'capture' }, SECRETS.session);
     await app.ready();
     const ws = await app.injectWS(`/ws/client/${SID}?t=${t}`);
     ws.terminate();

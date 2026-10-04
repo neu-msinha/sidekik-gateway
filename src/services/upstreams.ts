@@ -16,7 +16,7 @@ const PresaveSchema = z.object({
 export type PresaveResult = z.infer<typeof PresaveSchema>;
 
 /** Tool responses are relayed to ElevenLabs as-is; only require a JSON object. */
-const ToolResult = z.record(z.unknown());
+const ToolResult = z.record(z.string(), z.unknown());
 export type ToolResult = z.infer<typeof ToolResult>;
 
 export interface TutorClient {
