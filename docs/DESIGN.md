@@ -28,7 +28,7 @@ The gateway is the **only public API** and the **only path from backend to brows
 | POST | `/v1/sessions/:id/off-record` | `{on, source:"ui"\|"agent"\|"chat"}` | See §4 |
 | POST | `/v1/sessions/:id/end` | | Lifecycle `ended`; removes the bot if one is present |
 | POST | `/v1/sessions/:id/meeting-bot` | `{meeting_url}` | → meetbot |
-| POST | `/v1/sessions/:id/presave` | `{state: InvoiceState}` → `{allow, guardrail_id?, quote?, step_id?}` | → tutor, 300 ms timeout |
+| POST | `/v1/sessions/:id/presave` | `{state: InvoiceState}` → `{allow, guardrail_id?, guardrail_key?, quote?, step_id?, field?, violations?}` | → tutor, 300 ms timeout |
 | GET | `/v1/sessions/:id/timeline` | | Merged events, turns, questions and decisions, ordered by `t_ms` |
 | POST | `/v1/workmaps/:id/publish` | → `{job_id}` | → mapper (async) |
 | GET | `/v1/workmaps/:id/export?format=agent` | | → mapper |
