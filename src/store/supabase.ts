@@ -1,4 +1,5 @@
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
+import { UserNotFoundError } from './types.js';
 import type {
   CaptureTable,
   CostEntry,
@@ -28,6 +29,19 @@ const SESSION_COLUMNS =
 function unwrap<T>({ data, error }: { data: T; error: PostgrestError | null }, what: string): T {
   if (error) throw new Error(`${what}: ${error.message}`);
   return data;
+}
+
+/** auth.users is not exposed over PostgREST and the admin API has no email filter, so page through it. */
+async function findUserIdByEmail(db: SupabaseClient, email: string): Promise<string | null> {
+  const wanted = email.toLowerCase();
+  const perPage = 1000;
+  for (let page = 1; ; page++) {
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage });
+    if (error) throw new Error(`list users: ${error.message}`);
+    const user = data.users.find((u) => u.email?.toLowerCase() === wanted);
+    if (user) return user.id;
+    if (data.users.length < perPage) return null;
+  }
 }
 
 export function supabaseStore(db: SupabaseClient): Store {
@@ -93,6 +107,43 @@ export function supabaseStore(db: SupabaseClient): Store {
           .maybeSingle<Person>(),
         'find learner',
       );
+    },
+
+    async assignRole(input) {
+      const userId = await findUserIdByEmail(db, input.email);
+      if (!userId) throw new UserNotFoundError(input.email);
+
+      unwrap(
+        await db
+          .from('org_members')
+          .upsert({ org_id: input.org_id, user_id: userId, role: input.role }, { onConflict: 'org_id,user_id' }),
+        'upsert member',
+      );
+      const profileTable = input.role === 'expert' ? 'experts' : input.role === 'learner' ? 'learners' : null;
+      if (!profileTable) return { user_id: userId, person_id: null };
+
+      const what = profileTable.slice(0, -1);
+      const existing = unwrap(
+        await db
+          .from(profileTable)
+          .select('id')
+          .eq('org_id', input.org_id)
+          .eq('user_id', userId)
+          .limit(1)
+          .maybeSingle<{ id: string }>(),
+        `find ${what}`,
+      );
+      if (existing) return { user_id: userId, person_id: existing.id };
+      const created = unwrap(
+        await db
+          .from(profileTable)
+          .insert({ org_id: input.org_id, user_id: userId, display_name: input.display_name, language: input.language })
+          .select('id')
+          .single<{ id: string }>(),
+        `insert ${what}`,
+      );
+      if (!created) throw new Error(`insert ${what}: no row returned`);
+      return { user_id: userId, person_id: created.id };
     },
 
     async getExpert(id) {
