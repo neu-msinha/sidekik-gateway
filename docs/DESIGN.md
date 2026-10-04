@@ -44,7 +44,7 @@ The gateway is the **only public API** and the **only path from backend to brows
 
 | Message | Handling |
 |---|---|
-| `turn` | If off-record, store only `[off the record]` and don't publish. Otherwise redact with Presidio (analyzer + anonymizer, custom recognizers, allow-list of cost centers and invoice IDs) and publish `sk:transcript.turns`. |
+| `turn` | If off-record, store only `[off the record]` and don't publish. Otherwise redact with `redact(text, lang, { analyzerUrl, anonymizerUrl, keep: [supplier of the record on screen] })` from `@sidekik/contracts` and publish `sk:transcript.turns`. It fails closed: if Presidio errors, don't publish the turn. Presidio NER redacts PERSON only (suppliers, places and dates are business data); `keep` stops spaCy from tagging the supplier as a person. |
 | `speech` | Publish `sk:speech.signals`. |
 | `dom` | Publish `sk:dom.events`. |
 | `agent_event` | Status and tool-call telemetry; log only. |

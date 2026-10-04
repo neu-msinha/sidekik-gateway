@@ -29,15 +29,22 @@ const sessionRow = (over: Partial<SessionRow> = {}): SessionRow => ({
   ...over,
 });
 
-/** Uppercases the text so tests can see redaction happened; `delays` slows specific inputs. */
-const fakeRedactor = (delays: Record<string, number> = {}): Redactor & { calls: string[] } => {
+/** Prefixes the text so tests can see redaction happened; `delays` slows specific inputs, `fail` makes them throw. */
+const fakeRedactor = (
+  delays: Record<string, number> = {},
+  fail: string[] = [],
+): Redactor & { calls: string[]; keeps: (readonly string[] | undefined)[] } => {
   const calls: string[] = [];
+  const keeps: (readonly string[] | undefined)[] = [];
   return {
     calls,
-    async redact(text, language) {
+    keeps,
+    async redact(text, language, keep) {
       calls.push(`${language}:${text}`);
+      keeps.push(keep);
       await new Promise((r) => setTimeout(r, delays[text] ?? 0));
-      return { text: `[R]${text}`, engine: 'presidio', entities: [] };
+      if (fail.includes(text)) throw new Error('presidio /analyze: HTTP 503');
+      return { text: `[R]${text}`, entities: [] };
     },
   };
 };
@@ -81,7 +88,7 @@ describe('WS /ws/client/:sid connection checks', () => {
   });
 
   it('rejects a token signed with another secret', async () => {
-    const bad = await signSessionToken({ sid: SID, org: IDS.org, role: 'expert', kind: 'capture' }, 'x'.repeat(64));
+    const bad = signSessionToken({ sid: SID, org: IDS.org, role: 'expert', kind: 'capture' }, 'x'.repeat(64));
     expect(await status(`/ws/client/${SID}?t=${bad}`)).toBe(401);
   });
 
@@ -128,6 +135,27 @@ describe('WS /ws/client/:sid messages', () => {
     });
     expect((ev.data as { turn_id: string }).turn_id).toHaveLength(26);
     expect(redactor.calls).toEqual(['de:Sabine recodes it to 0400']);
+    ws.terminate();
+  });
+
+  it('drops a turn that cannot be redacted instead of publishing it (fail closed)', async () => {
+    redactor = fakeRedactor({}, ['Sabine says the IBAN is DE89…']);
+    const { ws } = await connect();
+    send(ws, { type: 'turn', role: 'user', text: 'Sabine says the IBAN is DE89…' });
+    send(ws, { type: 'turn', role: 'user', text: 'next' });
+    await vi.waitFor(() => expect(bus.published).toHaveLength(1));
+    expect((bus.published[0]!.ev.data as { text: string }).text).toBe('[R]next');
+    ws.terminate();
+  });
+
+  it('keeps the supplier of the record on screen from redaction', async () => {
+    const { ws } = await connect();
+    send(ws, { type: 'turn', role: 'user', text: 'before any record' });
+    await vi.waitFor(() => expect(redactor.calls).toHaveLength(1));
+    send(ws, { type: 'dom', kind: 'record_open', record: { kind: 'invoice', id: '4471' }, state: { supplier: 'Präzisionswerk Ulm' } });
+    send(ws, { type: 'turn', role: 'user', text: 'Präzisionswerk Ulm kenne ich' });
+    await vi.waitFor(() => expect(redactor.calls).toHaveLength(2));
+    expect(redactor.keeps).toEqual([[], ['Präzisionswerk Ulm']]);
     ws.terminate();
   });
 

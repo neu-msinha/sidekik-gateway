@@ -85,7 +85,7 @@ describe('POST /v1/sessions', () => {
       },
     });
     expect(body.ingest_url).toBe(`wss://ingest.sidekik.live/ws/frames/${sid}`);
-    expect(await verifySessionToken(body.sk_token, SECRETS.session)).toMatchObject({
+    expect(verifySessionToken(body.sk_token, SECRETS.session)).toMatchObject({
       sid,
       org: IDS.org,
       role: 'expert',
@@ -162,7 +162,7 @@ describe('POST /v1/sessions', () => {
       workmap_id: IDS.workmap,
     });
     expect(bus.published[0]!.ev.data).toMatchObject({ event: 'started', phase: 'tutoring', workmap_id: IDS.workmap });
-    expect(await verifySessionToken(body.sk_token, SECRETS.session)).toMatchObject({ role: 'learner', kind: 'tutor' });
+    expect(verifySessionToken(body.sk_token, SECRETS.session)).toMatchObject({ role: 'learner', kind: 'tutor' });
   });
 
   it('returns 409 when the workflow has no Work Map yet', async () => {

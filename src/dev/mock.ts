@@ -5,7 +5,9 @@ import { buildApp } from '../app.js';
 import type { AuthUser } from '../auth.js';
 import { createBus, signSessionToken } from '../contracts/index.js';
 import { loadEnv } from '../env.js';
-import { presidioRedactor } from '../services/redact.js';
+import { createServiceLogger } from '../logger.js';
+import { redisHealth } from '../redis-health.js';
+import { presidioRedactor, type Redactor } from '../services/redact.js';
 import type { Broadcaster } from '../services/realtime.js';
 import { memoryStore } from '../store/memory.js';
 
@@ -108,10 +110,23 @@ const printBroadcaster: Broadcaster = {
   async close() {},
 };
 
-const bus = createBus(env.REDIS_URL, 'gateway', {
-  warn: (obj, msg) => app.log.warn(obj, msg),
-  error: (obj, msg) => app.log.error(obj, msg),
-});
+const log = createServiceLogger(env.LOG_LEVEL);
+
+// Production fails closed when Presidio is down (the turn is dropped). The mock only ever sees
+// made-up demo data, so without Presidio running it passes text through, loudly, to stay usable.
+const presidio = presidioRedactor({ analyzerUrl: env.PRESIDIO_ANALYZER_URL, anonymizerUrl: env.PRESIDIO_ANONYMIZER_URL });
+const devRedactor: Redactor = {
+  async redact(text, language, keep) {
+    try {
+      return await presidio.redact(text, language, keep);
+    } catch (err) {
+      log.warn({ err: err instanceof Error ? err.message : String(err) }, 'dev mock: Presidio unavailable, turn NOT redacted');
+      return { text, entities: [] };
+    }
+  },
+};
+const bus = createBus(env.REDIS_URL, 'gateway', { logger: log.child({ component: 'bus' }) });
+const redis = redisHealth(env.REDIS_URL, log);
 
 app = await buildApp({
   env,
@@ -159,12 +174,12 @@ app = await buildApp({
   },
   bus,
   broadcaster: printBroadcaster,
-  redactor: presidioRedactor({ analyzerUrl: env.PRESIDIO_ANALYZER_URL, anonymizerUrl: env.PRESIDIO_ANONYMIZER_URL }),
-  healthChecks: { redis: async () => void (await bus.redis.ping()) },
-  logger: { level: env.LOG_LEVEL, transport: { target: 'pino-pretty' } },
+  redactor: devRedactor,
+  healthChecks: { redis: redis.check },
+  loggerInstance: log,
 });
 app.addHook('onClose', () => bus.close());
-bus.redis.on('error', (err) => app.log.warn({ err: err.message }, 'redis error'));
+app.addHook('onClose', redis.close);
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, async () => {
@@ -175,7 +190,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 
 await app.listen({ host: '::', port: env.PORT });
 
-const skToken = await signSessionToken(
+const skToken = signSessionToken(
   { sid: MOCK.session, org: MOCK.org, role: 'expert', kind: 'capture' },
   env.SK_SESSION_SECRET,
 );

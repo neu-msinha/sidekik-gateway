@@ -2,6 +2,8 @@ import { buildApp } from './app.js';
 import { cachedVerifier, supabaseVerifier } from './auth.js';
 import { createBus } from './contracts/index.js';
 import { loadEnv } from './env.js';
+import { createServiceLogger } from './logger.js';
+import { redisHealth } from './redis-health.js';
 import { httpHealth } from './routes/health.js';
 import { supabaseBroadcaster } from './services/realtime.js';
 import { presidioRedactor } from './services/redact.js';
@@ -12,15 +14,11 @@ import { createSupabase, supabaseHealth } from './supabase.js';
 
 const env = loadEnv();
 const supabase = createSupabase(env);
-const pretty = process.env.NODE_ENV !== 'production' && process.stdout.isTTY;
+const log = createServiceLogger(env.LOG_LEVEL);
+const bus = createBus(env.REDIS_URL, 'gateway', { logger: log.child({ component: 'bus' }) });
+const redis = redisHealth(env.REDIS_URL, log);
 
-let app: Awaited<ReturnType<typeof buildApp>>;
-const bus = createBus(env.REDIS_URL, 'gateway', {
-  warn: (obj, msg) => app.log.warn(obj, msg),
-  error: (obj, msg) => app.log.error(obj, msg),
-});
-
-app = await buildApp({
+const app = await buildApp({
   env,
   verifyUser: cachedVerifier(supabaseVerifier(supabase)),
   store: supabaseStore(supabase),
@@ -36,20 +34,14 @@ app = await buildApp({
   }),
   healthChecks: {
     supabase: supabaseHealth(supabase),
-    redis: async () => {
-      await bus.redis.ping();
-    },
+    redis: redis.check,
     presidio_analyzer: httpHealth(new URL('/health', env.PRESIDIO_ANALYZER_URL).href),
     presidio_anonymizer: httpHealth(new URL('/health', env.PRESIDIO_ANONYMIZER_URL).href),
   },
-  logger: {
-    level: env.LOG_LEVEL,
-    ...(pretty && { transport: { target: 'pino-pretty' } }),
-  },
+  loggerInstance: log,
 });
 app.addHook('onClose', () => bus.close());
-// ioredis reconnects on its own; log instead of crashing on an unhandled 'error' event.
-bus.redis.on('error', (err) => app.log.warn({ err: err.message }, 'redis error'));
+app.addHook('onClose', redis.close);
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, async () => {

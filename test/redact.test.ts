@@ -1,7 +1,8 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { fallbackRedact, presidioRedactor } from '../src/services/redact.js';
+import { analyzeRequest } from '../src/contracts/index.js';
+import { presidioRedactor } from '../src/services/redact.js';
 
 type Finding = { entity_type: string; start: number; end: number; score: number };
 
@@ -38,71 +39,43 @@ const span = (text: string, needle: string, entity_type: string): Finding => {
   return { entity_type, start, end: start + needle.length, score: 0.85 };
 };
 
-describe('presidioRedactor', () => {
-  it('anonymizes findings but keeps allow-listed business identifiers', async () => {
-    const text = 'Sabine booked #4471 from 4711 to 0400 for DE01, call +49 711 1234567.';
-    const { calls, redactor } = await fakePresidio({
-      findings: (t) => [
-        span(t, 'Sabine', 'PERSON'),
-        span(t, '#4471', 'PHONE_NUMBER'),
-        span(t, '4711', 'PHONE_NUMBER'),
-        span(t, '0400', 'US_BANK_NUMBER'),
-        span(t, 'DE01', 'LOCATION'),
-        span(t, '+49 711 1234567', 'PHONE_NUMBER'),
-      ],
-    });
+describe('presidioRedactor (sidekik-platform redact())', () => {
+  it("sends the platform's analyze request: mapped language, entities, allow-list with the supplier kept", async () => {
+    const text = 'Präzisionswerk Ulm schickt die Rechnung, Sabine bucht sie.';
+    const { calls, redactor } = await fakePresidio({ findings: (t) => [span(t, 'Sabine', 'PERSON')] });
+    await redactor.redact(text, 'de-DE', ['Präzisionswerk Ulm']);
+    expect(calls[0]).toEqual({ path: '/analyze', body: JSON.parse(JSON.stringify(analyzeRequest(text, 'de-DE', ['Präzisionswerk Ulm']))) });
+    expect(calls[0]!.body.language).toBe('de');
+    expect(calls[0]!.body.allow_list.some((p: string) => new RegExp(p).test('Präzisionswerk Ulm'))).toBe(true);
+  });
 
-    const out = await redactor.redact(text, 'de');
-    expect(out).toEqual({
-      text: '<PERSON> booked #4471 from 4711 to 0400 for DE01, call <PHONE_NUMBER>.',
-      engine: 'presidio',
+  it('anonymizes what the analyzer found and names each entity once', async () => {
+    const text = 'Sabine and Jürgen, call +49 711 1234567.';
+    const { calls, redactor } = await fakePresidio({
+      findings: (t) => [span(t, 'Sabine', 'PERSON'), span(t, 'Jürgen', 'PERSON'), span(t, '+49 711 1234567', 'PHONE_NUMBER')],
+    });
+    expect(await redactor.redact(text, 'en')).toEqual({
+      text: '<PERSON> and <PERSON>, call <PHONE_NUMBER>.',
       entities: ['PERSON', 'PHONE_NUMBER'],
     });
-    expect(calls[0]).toEqual({ path: '/analyze', body: { text, language: 'de' } });
-    expect(calls[1]!.body.analyzer_results).toHaveLength(2);
+    expect(calls[1]).toMatchObject({ path: '/anonymize', body: { anonymizers: { DEFAULT: { type: 'replace' } } } });
   });
 
   it('skips the anonymizer when nothing is found', async () => {
     const { calls, redactor } = await fakePresidio({ findings: () => [] });
-    const out = await redactor.redact('Recode it to 0400.', 'en');
-    expect(out).toEqual({ text: 'Recode it to 0400.', engine: 'presidio', entities: [] });
+    expect(await redactor.redact('Recode it to 0400.', 'en')).toEqual({ text: 'Recode it to 0400.', entities: [] });
     expect(calls.map((c) => c.path)).toEqual(['/analyze']);
   });
 
-  it('falls back to regex patterns when the analyzer fails', async () => {
-    const { redactor } = await fakePresidio({ analyzeStatus: 500 });
-    const out = await redactor.redact('Mail sabine@maschinenbau.de about 4711', 'de');
-    expect(out).toMatchObject({ text: 'Mail <EMAIL_ADDRESS> about 4711', engine: 'fallback', entities: ['EMAIL_ADDRESS'] });
-    expect(out.error).toMatch(/returned 500/);
-  });
+  it('throws when Presidio fails, so callers drop the text (fail closed)', async () => {
+    const failing = await fakePresidio({ analyzeStatus: 500 });
+    await expect(failing.redactor.redact('Sabine', 'de')).rejects.toThrow(/HTTP 500/);
+    await new Promise<void>((resolve) => server!.close(() => resolve()));
 
-  it('falls back when the anonymizer times out', async () => {
-    const { redactor } = await fakePresidio({ findings: (t) => [span(t, 'Sabine', 'PERSON')], hangAnonymize: true });
-    const out = await redactor.redact('Sabine said so', 'en');
-    expect(out.engine).toBe('fallback');
-    expect(out.error).toMatch(/timed out/);
-  });
+    const hanging = await fakePresidio({ findings: (t) => [span(t, 'Sabine', 'PERSON')], hangAnonymize: true });
+    await expect(hanging.redactor.redact('Sabine', 'de')).rejects.toThrow();
 
-  it('falls back when Presidio is unreachable', async () => {
-    const redactor = presidioRedactor({ analyzerUrl: 'http://127.0.0.1:9', anonymizerUrl: 'http://127.0.0.1:9' });
-    expect((await redactor.redact('IBAN DE89 3704 0044 0532 0130 00', 'en')).text).toBe('IBAN <IBAN_CODE>');
-  });
-});
-
-describe('fallbackRedact', () => {
-  it.each([
-    ['email', 'write to lena.k@example.com today', 'write to <EMAIL_ADDRESS> today'],
-    ['IBAN with spaces', 'pay DE89 3704 0044 0532 0130 00 now', 'pay <IBAN_CODE> now'],
-    ['IBAN compact', 'pay DE89370400440532013000 now', 'pay <IBAN_CODE> now'],
-    ['German VAT id', 'USt-IdNr DE123456789', 'USt-IdNr <VAT_ID>'],
-    ['Czech VAT id', 'DIČ CZ12345678', 'DIČ <VAT_ID>'],
-    ['international phone', 'ring +49 711 123 4567', 'ring <PHONE_NUMBER>'],
-  ])('redacts %s', (_label, input, expected) => {
-    expect(fallbackRedact(input).text).toBe(expected);
-  });
-
-  it('keeps cost centers, invoice ids, company codes and amounts', () => {
-    const text = 'Invoice #4510 for €7,200 on 4711 in DE01 should go to 0400, CZ01 needs approval.';
-    expect(fallbackRedact(text)).toEqual({ text, engine: 'fallback', entities: [] });
+    const unreachable = presidioRedactor({ analyzerUrl: 'http://127.0.0.1:9', anonymizerUrl: 'http://127.0.0.1:9' });
+    await expect(unreachable.redact('Sabine', 'de')).rejects.toThrow();
   });
 });

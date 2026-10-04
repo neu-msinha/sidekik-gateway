@@ -18,7 +18,8 @@ export const replayRoutes: FastifyPluginAsyncZod<ReplayRoutesOptions> = async (a
       onRequest: app.requireUser,
       schema: {
         params: z.object({ sid: z.string().uuid() }),
-        body: z.object({ speed: z.number().min(0.25).max(10).default(1) }).default({}),
+        // prefault: zod 4's default({}) would skip the inner defaults.
+        body: z.object({ speed: z.number().min(0.25).max(10).default(1) }).prefault({}),
       },
     },
     async (request, reply) => {
@@ -28,7 +29,7 @@ export const replayRoutes: FastifyPluginAsyncZod<ReplayRoutesOptions> = async (a
 
       const { speed } = request.body;
       const started = await opts.replay.start(original, speed);
-      const sk_token = await signSessionToken(
+      const sk_token = signSessionToken(
         { sid: started.session.id, org: started.session.org_id, role, kind: started.session.kind },
         opts.sessionSecret,
       );

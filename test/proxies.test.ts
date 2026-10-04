@@ -269,10 +269,11 @@ describe('agent host (meeting mode)', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.session_id).toBe(MEETING);
-    expect(await verifySessionToken(body.sk_token, SECRETS.session)).toMatchObject({
+    // The page acts for the capture's expert (the platform's SessionRole has no agent-host role).
+    expect(verifySessionToken(body.sk_token, SECRETS.session)).toMatchObject({
       sid: MEETING,
       org: IDS.org,
-      role: 'agent_host',
+      role: 'expert',
       kind: 'capture',
     });
     expect(body.el).toMatchObject({

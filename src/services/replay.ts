@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { makeEvent, STREAMS, type Bus, type Envelope, type StreamKey } from '../contracts/index.js';
+import { makeEvent, STREAMS, type Bus, type Envelope, type StreamKey, type StreamPayload } from '../contracts/index.js';
 import { HttpError } from '../errors.js';
 import type { ReplayEventRow, SessionRow, Store } from '../store/types.js';
 import { stableUuid, UUID_RE } from './ids.js';
@@ -115,7 +115,8 @@ export function createReplay(deps: ReplayDeps) {
 
     for (const e of events) {
       cancels.push(
-        schedule(() => enqueue(() => deps.bus.publish(e.stream as StreamKey, rewrite(e, session.id))), e.t_ms / speed),
+        // The bus validates each event against its stream's schema; the cast only satisfies the types.
+        schedule(() => enqueue(() => deps.bus.publish(e.stream as StreamKey, rewrite(e, session.id) as Envelope<StreamPayload<StreamKey>>)), e.t_ms / speed),
       );
     }
 

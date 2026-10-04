@@ -1,31 +1,34 @@
 import { performance } from 'node:perf_hooks';
 import type { FastifyPluginAsync, onRequestAsyncHookHandler } from 'fastify';
-import { ulid } from 'ulid';
 import type { RawData, WebSocket } from 'ws';
 import { z } from 'zod';
 import {
   DomEventSchema,
   makeEvent,
+  newId,
   SpeechSignalSchema,
   STREAMS,
   verifySessionToken,
   type Bus,
   type DomEvent,
   type SessionClaims,
-  type SpeechSignal,
   type StreamKey,
+  type StreamPayload,
   type TranscriptTurn,
 } from '../contracts/index.js';
 import { forbidden, HttpError, notFound, unauthorized } from '../errors.js';
 import { annotate } from '../logging.js';
 import type { OffRecordState } from '../services/off-record.js';
 import type { Redactor } from '../services/redact.js';
+import type { ScreenContext } from '../services/screen-context.js';
 import type { SessionRow, Store } from '../store/types.js';
 
 export type WsClientOptions = {
   store: Store;
   bus: Bus;
   redactor: Redactor;
+  /** The supplier on screen per session, passed to the redactor as `keep`. */
+  screen: ScreenContext;
   offRecord: OffRecordState;
   /** Called once per accepted connection, e.g. to open the session's Realtime channel early. */
   onConnect?: (sessionId: string) => void;
@@ -74,7 +77,7 @@ export const wsClientRoutes: FastifyPluginAsync<WsClientOptions> = async (app, o
 
     let claims: SessionClaims;
     try {
-      claims = await verifySessionToken(t, opts.sessionSecret);
+      claims = verifySessionToken(t, opts.sessionSecret);
     } catch {
       throw unauthorized('Invalid or expired sk_token');
     }
@@ -98,7 +101,7 @@ export const wsClientRoutes: FastifyPluginAsync<WsClientOptions> = async (app, o
     opts.onConnect?.(session.id);
     log.info('client connected');
 
-    const publish = async <T>(stream: StreamKey, type: string, t_ms: number | undefined, data: T) => {
+    const publish = async <K extends StreamKey>(stream: K, type: string, t_ms: number | undefined, data: StreamPayload<K>) => {
       const ev = makeEvent({
         type,
         org_id: session.org_id,
@@ -117,9 +120,13 @@ export const wsClientRoutes: FastifyPluginAsync<WsClientOptions> = async (app, o
         log.info({ t_ms: msg.t_ms }, 'turn dropped: off the record');
         return;
       }
-      const redacted = await redactor.redact(msg.text, session.language);
-      if (redacted.engine === 'fallback') {
-        log.warn({ err: redacted.error }, 'presidio unavailable; turn redacted with fallback patterns');
+      let redacted: Awaited<ReturnType<Redactor['redact']>>;
+      try {
+        redacted = await redactor.redact(msg.text, session.language, opts.screen.keep(session.id));
+      } catch (err) {
+        // Fail closed (DESIGN §4): an unredacted turn never reaches the bus. The text isn't logged.
+        log.error({ err: err instanceof Error ? err.message : String(err), t_ms: msg.t_ms }, 'turn dropped: redaction failed');
+        return;
       }
       // Off-record may have been switched on while Presidio was running.
       if (offRecord.isOn(session.id)) {
@@ -127,7 +134,7 @@ export const wsClientRoutes: FastifyPluginAsync<WsClientOptions> = async (app, o
         return;
       }
       const turn: TranscriptTurn = {
-        turn_id: msg.turn_id ?? ulid(),
+        turn_id: msg.turn_id ?? newId(),
         role: msg.role,
         text: redacted.text,
         lang: session.language,
@@ -139,7 +146,6 @@ export const wsClientRoutes: FastifyPluginAsync<WsClientOptions> = async (app, o
         {
           event_id: ev.id,
           turn_id: turn.turn_id,
-          engine: redacted.engine,
           entities: redacted.entities,
           latency_ms: Math.round(performance.now() - received),
         },
@@ -164,17 +170,19 @@ export const wsClientRoutes: FastifyPluginAsync<WsClientOptions> = async (app, o
           .catch((err) => log.error({ err }, 'turn failed'));
         return;
       }
+      // The supplier on screen is kept from redaction; remembering it is harmless even off the record.
+      if (msg.type === 'dom') opts.screen.update(session.id, msg.state?.supplier);
       if (offRecord.isOn(session.id)) {
         log.debug({ type: msg.type }, 'message dropped: off the record');
         return;
       }
       const sent =
         msg.type === 'speech'
-          ? publish<SpeechSignal>(STREAMS.speech, 'speech.signal', msg.t_ms, {
+          ? publish(STREAMS.speech, 'speech.signal', msg.t_ms, {
               kind: msg.kind,
               source: msg.source ?? 'sdk',
             })
-          : publish<DomEvent>(STREAMS.dom, 'dom.event', msg.t_ms, stripEnvelopeFields(msg));
+          : publish(STREAMS.dom, 'dom.event', msg.t_ms, stripEnvelopeFields(msg));
       sent.catch((err) => log.error({ err, type: msg.type }, 'publish failed'));
     });
 

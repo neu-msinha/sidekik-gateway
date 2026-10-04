@@ -1,4 +1,4 @@
-import Fastify, { type FastifyError, type FastifyServerOptions } from 'fastify';
+import Fastify, { LogController, type FastifyBaseLogger, type FastifyError, type FastifyServerOptions } from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit, { type RateLimitPluginOptions } from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
@@ -28,6 +28,7 @@ import { createEgress } from './services/egress.js';
 import { createOffRecordController, OffRecordState } from './services/off-record.js';
 import { createPhaseService } from './services/phase.js';
 import { createReplay, RECORDED_STREAMS, RECORDER_GROUP } from './services/replay.js';
+import { ScreenContext } from './services/screen-context.js';
 import type { Broadcaster } from './services/realtime.js';
 import type { Redactor } from './services/redact.js';
 import type { MapperClient, MeetbotClient, TutorClient } from './services/upstreams.js';
@@ -48,6 +49,8 @@ export type AppDeps = {
   redactor: Redactor;
   broadcaster: Broadcaster;
   offRecord?: OffRecordState;
+  /** The service's shared pino logger (server, dev:mock); tests pass `logger` options instead. */
+  loggerInstance?: FastifyBaseLogger;
   logger?: FastifyServerOptions['logger'];
   /** Overrides for the per-user rate limit (tests); defaults to 20 req/s. */
   rateLimit?: Partial<RateLimitPluginOptions>;
@@ -56,15 +59,22 @@ export type AppDeps = {
 export async function buildApp(deps: AppDeps) {
   const { env } = deps;
   const offRecord = deps.offRecord ?? new OffRecordState();
+  const screen = new ScreenContext();
 
   const logger = deps.logger ?? { level: env.LOG_LEVEL };
   const app = Fastify({
-    // Every line names the service and version; Railway shows all services in one stream.
-    logger:
-      typeof logger === 'object' ? { ...logger, base: { service: 'sidekik-gateway', version: VERSION, pid: process.pid } } : logger,
-    disableRequestLogging: true,
+    ...(deps.loggerInstance
+      ? { loggerInstance: deps.loggerInstance }
+      : {
+          // Every line names the service and version; Railway shows all services in one stream.
+          logger:
+            typeof logger === 'object'
+              ? { ...logger, base: { service: 'sidekik-gateway', version: VERSION, pid: process.pid } }
+              : logger,
+        }),
+    // registerRequestLogging writes one line per request instead of Fastify's two.
+    logController: new LogController({ disableRequestLogging: true, requestIdLogLabel: 'req_id' }),
     genReqId,
-    requestIdLogLabel: 'req_id',
     // Cloudflare → Railway: trust X-Forwarded-* for client IPs.
     trustProxy: true,
   }).withTypeProvider<ZodTypeProvider>();
@@ -126,6 +136,7 @@ export async function buildApp(deps: AppDeps) {
     egress.forget(session.id);
     phase.forget(session.id);
     offRecord.forget(session.id);
+    screen.forget(session.id);
     if (session.mode === 'meeting') {
       await deps.meetbot.removeBot(session.id).catch((err) =>
         app.log.warn({ err, session_id: session.id, org_id: session.org_id }, 'meeting bot removal failed'),
@@ -169,11 +180,13 @@ export async function buildApp(deps: AppDeps) {
   const stops: (() => void)[] = [];
   app.addHook('onReady', async () => {
     stops.push(
-      deps.bus.consume<AgentCommand>(STREAMS.commands, async (ev) => {
+      deps.bus.consume(STREAMS.commands, async (ev) => {
         await egress.handle(ev);
       }),
-      deps.bus.consume<UsageRecord>(STREAMS.usage, recordUsage),
-      deps.bus.consume<WorkMapPublished>(STREAMS.workmapPublished, setCurrentWorkMap),
+      deps.bus.consume(STREAMS.usage, recordUsage),
+      deps.bus.consume(STREAMS.workmapPublished, setCurrentWorkMap),
+      // Meeting mode sends no DOM events: the supplier on screen comes from perception instead.
+      deps.bus.consume(STREAMS.screen, async (ev) => screen.update(ev.session_id, ev.data.state.record?.supplier)),
       ...RECORDED_STREAMS.map((stream) =>
         deps.bus.consume(
           stream,
@@ -206,6 +219,7 @@ export async function buildApp(deps: AppDeps) {
     store: deps.store,
     bus: deps.bus,
     redactor: deps.redactor,
+    screen,
     offRecord,
     onConnect: (sessionId) => deps.broadcaster.warm(sessionId),
     sessionSecret: env.SK_SESSION_SECRET,
