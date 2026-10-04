@@ -11,7 +11,8 @@ export type WorkflowRow = {
   current_workmap_id: string | null;
 };
 
-export type WorkMapRef = { id: string; org_id: string; workflow_id: string; expert_id: string };
+/** `version` is read where it matters (which map is current); seeds may leave it out. */
+export type WorkMapRef = { id: string; org_id: string; workflow_id: string; expert_id: string; version?: number };
 
 export type SessionRow = {
   id: string;
@@ -87,6 +88,8 @@ export type ConsentInput = {
  */
 export interface Store {
   getWorkflow(id: string): Promise<WorkflowRow | null>;
+  /** Points the workflow at the Work Map new tutor sessions use (workflows.current_workmap_id). */
+  setCurrentWorkMap(workflowId: string, workmapId: string): Promise<void>;
   getRole(orgId: string, userId: string): Promise<Role | null>;
   findExpertByUser(orgId: string, userId: string): Promise<Person | null>;
   findLearnerByUser(orgId: string, userId: string): Promise<Person | null>;

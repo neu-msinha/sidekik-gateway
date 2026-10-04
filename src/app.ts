@@ -10,7 +10,7 @@ import {
 } from 'fastify-type-provider-zod';
 import type { Env } from './env.js';
 import { requireSharedSecret, requireUser, type VerifyUser } from './auth.js';
-import { STREAMS, type AgentCommand, type Bus, type UsageRecord } from './contracts/index.js';
+import { STREAMS, type AgentCommand, type Bus, type UsageRecord, type WorkMapPublished } from './contracts/index.js';
 import { HttpError } from './errors.js';
 import { genReqId, registerRequestLogging } from './logging.js';
 import { rateLimitOptions } from './rate-limit.js';
@@ -23,6 +23,7 @@ import { proxyRoutes, toolRoutes } from './routes/proxies.js';
 import { sessionRoutes } from './routes/sessions.js';
 import { wsClientRoutes } from './routes/ws-client.js';
 import { createCostLedger } from './services/costs.js';
+import { createCurrentWorkMapUpdater } from './services/current-workmap.js';
 import { createEgress } from './services/egress.js';
 import { createOffRecordController, OffRecordState } from './services/off-record.js';
 import { createPhaseService } from './services/phase.js';
@@ -162,6 +163,7 @@ export async function buildApp(deps: AppDeps) {
     onBackOnRecord: (session, log) => phase.resumeAfterOffRecord(session, log),
   });
   const recordUsage = createCostLedger({ store: deps.store, log: app.log.child({ component: 'cost_ledger' }) });
+  const setCurrentWorkMap = createCurrentWorkMapUpdater({ store: deps.store, log: app.log.child({ component: 'current_workmap' }) });
 
   // Bus consumers start once the app is ready and stop when it closes.
   const stops: (() => void)[] = [];
@@ -171,6 +173,7 @@ export async function buildApp(deps: AppDeps) {
         await egress.handle(ev);
       }),
       deps.bus.consume<UsageRecord>(STREAMS.usage, recordUsage),
+      deps.bus.consume<WorkMapPublished>(STREAMS.workmapPublished, setCurrentWorkMap),
       ...RECORDED_STREAMS.map((stream) =>
         deps.bus.consume(
           stream,

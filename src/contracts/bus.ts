@@ -11,6 +11,7 @@ import { DomEventSchema } from './screen.js';
 import { STREAMS, type StreamKey } from './streams.js';
 import { SpeechSignalSchema, TranscriptTurnSchema } from './transcript.js';
 import { UsageRecordSchema } from './usage.js';
+import { WorkMapPublishedSchema } from './workmap.js';
 
 export const DLQ_STREAM = 'sk:dlq';
 /** Stream entry field holding the JSON envelope; sidekik-platform's bus.ts uses "ev". */
@@ -36,6 +37,7 @@ export const STREAM_SCHEMAS: Partial<Record<StreamKey, z.ZodTypeAny>> = {
   [STREAMS.dom]: DomEventSchema,
   [STREAMS.commands]: AgentCommandSchema,
   [STREAMS.usage]: UsageRecordSchema,
+  [STREAMS.workmapPublished]: WorkMapPublishedSchema,
 };
 
 export type ConsumeOptions = { group?: string; batch?: number; blockMs?: number };

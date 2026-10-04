@@ -49,6 +49,13 @@ export function supabaseStore(db: SupabaseClient): Store {
       );
     },
 
+    async setCurrentWorkMap(workflowId, workmapId) {
+      unwrap(
+        await db.from('workflows').update({ current_workmap_id: workmapId }).eq('id', workflowId),
+        'set current work map',
+      );
+    },
+
     async getRole(orgId, userId) {
       const row = unwrap(
         await db
@@ -106,7 +113,7 @@ export function supabaseStore(db: SupabaseClient): Store {
       return unwrap(
         await db
           .from('work_maps')
-          .select('id, org_id, workflow_id, expert_id')
+          .select('id, org_id, workflow_id, expert_id, version')
           .eq('id', id)
           .maybeSingle<WorkMapRef>(),
         'get work map',

@@ -60,6 +60,10 @@ export function memoryStore(seed: Partial<MemoryData> = {}): Store & { data: Mem
   return {
     data,
     getWorkflow: async (id) => data.workflows.find((w) => w.id === id) ?? null,
+    setCurrentWorkMap: async (workflowId, workmapId) => {
+      const workflow = data.workflows.find((w) => w.id === workflowId);
+      if (workflow) workflow.current_workmap_id = workmapId;
+    },
     getRole: async (org, user) => data.members.find((m) => m.org_id === org && m.user_id === user)?.role ?? null,
     findExpertByUser: async (org, user) => person(data.experts.find((e) => e.org_id === org && e.user_id === user)),
     findLearnerByUser: async (org, user) => person(data.learners.find((l) => l.org_id === org && l.user_id === user)),
